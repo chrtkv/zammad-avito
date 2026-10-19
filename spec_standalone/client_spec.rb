@@ -76,6 +76,27 @@ RSpec.describe AvitoMessenger::Client do
       end
     end
 
+    # Seen on the live API on 2026-10-20: an invalid token gets 403, not 401.
+    context 'when Avito refuses the token with 403' do
+      let(:responses) do
+        [[403, { 'result' => { 'status' => false, 'message' => 'invalid access token' } }], token_ok, [200, { 'id' => user_id }]]
+      end
+
+      it 'refreshes once and repeats the request' do
+        expect(client.account['id']).to eq(user_id)
+        expect(transport.requests.map(&:path)).to eq(['/core/v1/accounts/self', '/token', '/core/v1/accounts/self'])
+      end
+    end
+
+    context 'when a 403 is about something else' do
+      let(:responses) { [[403, { 'result' => { 'status' => false, 'message' => 'forbidden for this item' } }]] }
+
+      it 'reports it without a refresh, with Avito\'s message' do
+        expect { client.account }.to raise_error(AvitoMessenger::Error::Api, /403: forbidden for this item/)
+        expect(transport.requests.size).to eq(1)
+      end
+    end
+
     context 'when the fresh token is refused too' do
       let(:responses) { [[401, {}], token_ok, [401, { 'message' => 'Unauthorized' }]] }
 

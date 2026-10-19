@@ -1,0 +1,79 @@
+# A local Zammad with the package, for looking at the admin page and the reply action in a browser.
+# Started by bin/preview; Elasticsearch is left out (Zammad falls back to database search).
+name: zammad-avito-preview
+
+x-zammad: &zammad
+  image: zammad-avito-preview:dev
+  environment: &env
+    POSTGRESQL_HOST: postgresql
+    POSTGRESQL_USER: zammad
+    POSTGRESQL_PASS: zammad
+    POSTGRESQL_DB: zammad_production
+    POSTGRESQL_OPTIONS: '?pool=50'
+    REDIS_URL: redis://redis:6379
+    MEMCACHE_SERVERS: memcached:11211
+    ELASTICSEARCH_ENABLED: 'false'
+    NGINX_SERVER_SCHEME: http
+    TZ: Europe/Moscow
+    # Keeps the preview off the real Avito API: its demo accounts have made-up credentials.
+    http_proxy: http://127.0.0.1:9
+    https_proxy: http://127.0.0.1:9
+    no_proxy: localhost,127.0.0.1,postgresql,redis,memcached,zammad-railsserver,zammad-websocket
+  volumes:
+    - public:/opt/zammad/public
+    - storage:/opt/zammad/storage
+  depends_on:
+    - postgresql
+    - redis
+    - memcached
+
+services:
+  init:
+    <<: *zammad
+    command: zammad-init
+    restart: on-failure
+
+  zammad-railsserver:
+    <<: *zammad
+    command: zammad-railsserver
+    restart: unless-stopped
+
+  scheduler:
+    <<: *zammad
+    command: zammad-scheduler
+    restart: unless-stopped
+
+  zammad-websocket:
+    <<: *zammad
+    command: zammad-websocket
+    restart: unless-stopped
+
+  nginx:
+    <<: *zammad
+    command: zammad-nginx
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      - zammad-railsserver
+
+  postgresql:
+    image: postgres:17.5-alpine
+    environment:
+      POSTGRES_DB: zammad_production
+      POSTGRES_USER: zammad
+      POSTGRES_PASSWORD: zammad
+    volumes:
+      - postgresql:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.0
+
+  memcached:
+    image: memcached:1.6.38-alpine
+    command: memcached -m 64M
+
+volumes:
+  public:
+  storage:
+  postgresql:

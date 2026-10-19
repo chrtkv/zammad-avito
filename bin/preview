@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# A local Zammad with the package at http://127.0.0.1:8080.
+#
+#   bin/preview          # build, start, compile assets, create the admin
+#   bin/preview assets   # recompile assets after a change to CoffeeScript or templates (rebuild first)
+#   bin/preview down     # stop and delete everything, data included
+#
+# The admin's login and password are written to dev/preview/admin.env (not committed).
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+compose=(docker compose -f "$root/dev/preview/compose.yaml")
+admin_env="$root/dev/preview/admin.env"
+
+case "${1:-up}" in
+  down)
+    "${compose[@]}" down -v
+    exit 0
+    ;;
+  assets)
+    docker build -q -f "$root/dev/preview/Dockerfile" -t zammad-avito-preview:dev "$root" >/dev/null
+    "${compose[@]}" up -d >/dev/null
+    ;;
+  up)
+    docker build -q -f "$root/dev/preview/Dockerfile" -t zammad-avito-preview:dev "$root" >/dev/null
+    "${compose[@]}" up -d
+    echo "waiting for zammad-init..."
+    until [ "$("${compose[@]}" ps -a --format '{{.State}} {{.ExitCode}}' init)" = "exited 0" ]; do sleep 5; done
+    ;;
+esac
+
+# The image's own assets do not know the package; a volume shares the result with nginx.
+"${compose[@]}" exec -T -u 0 zammad-railsserver chown -R zammad:zammad /opt/zammad/public
+"${compose[@]}" exec -T zammad-railsserver bash -c 'cd /opt/zammad && bundle exec rake assets:precompile' | tail -3
+"${compose[@]}" restart zammad-railsserver nginx >/dev/null
+
+if [ ! -f "$admin_env" ]; then
+  password="$(openssl rand -base64 18 | tr -d '/+=')Aa1!"
+  printf 'ZAMMAD_ADMIN_LOGIN=admin@avito.test\nZAMMAD_ADMIN_PASSWORD=%s\n' "$password" > "$admin_env"
+  chmod 600 "$admin_env"
+fi
+# shellcheck disable=SC1090
+source "$admin_env"
+
+"${compose[@]}" exec -T -e LOGIN="$ZAMMAD_ADMIN_LOGIN" -e PASSWORD="$ZAMMAD_ADMIN_PASSWORD" zammad-railsserver bash -c 'cd /opt/zammad && bundle exec rails runner "
+  admin = User.find_by(login: ENV[%q(LOGIN)]) || User.new(login: ENV[%q(LOGIN)], email: ENV[%q(LOGIN)], firstname: %q(Admin), lastname: %q(Local), active: true, created_by_id: 1, updated_by_id: 1)
+  admin.password = ENV[%q(PASSWORD)]
+  admin.roles = Role.where(name: %w[Admin Agent])
+  admin.save!
+  Group.find_each { |group| admin.group_names_access_map = admin.group_names_access_map.merge(group.name => %w[full]) }
+  admin.save!
+  Setting.set(%q(system_init_done), true)
+  Setting.set(%q(fqdn), %q(127.0.0.1:8080))
+  Setting.set(%q(http_type), %q(http))
+  AvitoChannel::Setup.ensure!
+"'
+
+echo "Zammad: http://127.0.0.1:8080 (admin login in $admin_env)"

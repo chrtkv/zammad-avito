@@ -4,31 +4,57 @@ An [Avito](https://www.avito.ru) Messenger channel for [Zammad](https://zammad.o
 Avito accounts become tickets, agent replies go back to the chat, and messages written in Avito's own
 interface show up in the ticket as well.
 
-**Status: work in progress.** The Avito API core (`lib/avito_messenger/`) is written and tested; the Zammad
-side (channel admin, webhook endpoint, jobs, reply action) is next. Target: Zammad 7.2.
+**Status: works against a mocked Avito API; not yet run against the live one.** Target: Zammad 7.2, legacy
+(CoffeeScript) agent interface. See `docs/DESIGN.md` for how it works and what still needs the live API.
+
+## What it does
+
+- **Several accounts**, each a channel of its own (Admin → Channels → Avito): own credentials, group, webhook
+  and polling. Adding, disabling or deleting one leaves the others alone.
+- **Incoming**: Avito's webhook for speed, plus a poll every few minutes for whatever the webhook missed. One
+  ticket per chat, titled after the listing; the buyer becomes a customer. Images and voice messages arrive as
+  attachments.
+- **Messages written in Avito itself** (the website, the app, autoresponders) are added to the ticket as agent
+  replies marked as coming from Avito, and never sent back.
+- **Replies**: the "reply" action on an Avito message; long replies go out as several 1000-character
+  messages, images as images. Other attachments are refused with a clear delivery error, before anything
+  is sent.
 
 ## Requirements
 
-- An Avito account with the Messenger API subscription. Without it the API lists chats but answers
-  `402` to every message request.
+- An Avito account with the Messenger API subscription ("Максимальный" for goods and jobs, "Расширенный" or
+  "Максимальный" for services). Without it the API lists chats but answers `402` to everything else.
 - Client credentials (`client_id`, `client_secret`) for each account, from the account's API settings.
-- A public HTTPS URL for Zammad that Avito can reach, for the webhook.
+- A public HTTPS address of Zammad that Avito can reach, for the webhook. It defaults to Zammad's own
+  `http_type://fqdn`; each account can set another one.
+- Outbound HTTPS to `api.avito.ru`. The client uses Ruby's `Net::HTTP`, which honours the `http_proxy`
+  environment variable but not Zammad's proxy setting.
+
+## Installing
+
+The repository mirrors Zammad's source tree. To build it into a Zammad image, copy `app/`, `config/`, `db/`
+and `lib/` over `/opt/zammad`, recompile the assets (`rake assets:precompile`), and let `db:migrate` run
+(the Zammad docker image's init container does). `dev/preview/Dockerfile` is a working example.
+
+No upstream file is changed: the reply observer is attached from `config/initializers/avito_channel.rb`.
 
 ## Layout
-
-The repository mirrors Zammad's source tree, so its files can be copied into a Zammad image or bundled into
-a package.
 
 | Path | What |
 |---|---|
 | `lib/avito_messenger/` | Avito API client and the decisions that need no database. Plain Ruby |
-| `spec_standalone/` | Specs for that core, run without Zammad |
-| `docs/DESIGN.md` | How accounts, message sync, echo detection and delivery work |
+| `lib/avito_channel/`, `app/`, `config/`, `db/` | The Zammad side: accounts, webhook, import, replies, polling, admin page |
+| `spec_standalone/` | Specs for the API core, run without Zammad |
+| `spec/` | Specs run inside Zammad's own test environment |
+| `dev/` | Docker setups for those specs and for a local preview |
+| `docs/DESIGN.md` | How it works, and what the live API still has to confirm |
 
-## Tests
+## Development
 
 ```bash
-bin/test
+bin/test          # API core specs, Ruby 3.4.9 in Docker
+bin/zammad-spec   # Zammad-side specs; needs .zammad/ (see the script's header)
+bin/preview       # local Zammad with the package at http://127.0.0.1:8080
 ```
 
-Runs the standalone specs in Docker on Ruby 3.4.9, the version Zammad 7.2 uses.
+The preview is cut off from the real Avito API (its demo accounts would send made-up credentials there).

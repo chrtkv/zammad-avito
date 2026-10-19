@@ -123,7 +123,8 @@ only the latest ~1100 of each are reachable.
 ## Tokens and errors
 
 - `client_credentials`; a token lives 24 h. It is cached in the channel and refreshed five minutes before
-  expiry, or once on a 401.
+  expiry, or once when Avito refuses it: 401, or 403 with `{"result": {"message": "invalid access token"}}`
+  (that is what the live API answered on 2026-10-20). Any other 403 is reported without a retry.
 - `/token` answers HTTP 200 with `{"error": ...}` on failure, so success is judged by `access_token` in the
   body, never by the status.
 - 402 means the account has no Messenger API subscription ("Максимальный" for goods and jobs, "Расширенный"

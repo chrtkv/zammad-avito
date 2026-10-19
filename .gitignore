@@ -1,2 +1,3 @@
 .DS_Store
 /.zammad/
+/dev/preview/admin.env

@@ -1,0 +1,68 @@
+<div class="alert alert--danger hidden" role="alert"></div>
+<fieldset>
+  <h2><%- @T('Avito API keys') %></h2>
+  <p class="text-muted"><%- @T('From the Avito account\'s API settings ("Интеграции и API"). The account needs the Messenger API subscription.') %></p>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_client_id"><%- @T('Client ID') %> <span>*</span></label>
+    </div>
+    <div class="controls">
+      <input id="avito_client_id" type="text" name="client_id" value="<%= @options.auth?.client_id %>" class="form-control" required autocomplete="off">
+    </div>
+  </div>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_client_secret"><%- @T('Client secret') %> <% if !@channel: %><span>*</span><% end %></label>
+    </div>
+    <div class="controls">
+      <input id="avito_client_secret" type="password" name="client_secret" value="<%= @options.auth?.client_secret %>" class="form-control" <% if !@channel: %>required<% end %> autocomplete="new-password">
+    </div>
+  </div>
+
+  <h2><%- @T('Settings') %></h2>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label><%- @T('Choose the group to which messages will get added.') %> <span>*</span></label>
+    </div>
+    <div class="controls">
+      <div class="js-messagesGroup"></div>
+    </div>
+  </div>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_backfill_days"><%- @T('Import history (days)') %></label>
+    </div>
+    <div class="controls">
+      <input id="avito_backfill_days" type="number" min="0" max="90" name="backfill_days" value="<%= @sync.backfill_days || 0 %>" class="form-control">
+    </div>
+    <p class="help-text"><%- @T('On connecting, messages of this many past days are imported. 0 starts with new messages only.') %></p>
+  </div>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_poll_interval"><%- @T('Check for missed messages every (seconds)') %></label>
+    </div>
+    <div class="controls">
+      <input id="avito_poll_interval" type="number" min="60" name="poll_interval" value="<%= @sync.poll_interval || 300 %>" class="form-control">
+    </div>
+    <p class="help-text"><%- @T('Messages arrive through the webhook at once; this check picks up what it missed and messages written in Avito itself.') %></p>
+  </div>
+  <div class="checkbox form-group">
+    <label class="inline-label">
+      <span class="checkbox-replacement-holder">
+        <input type="checkbox" name="mark_read" value="true" class="checkbox-replacement" <% if @options.mark_read isnt false: %>checked<% end %>>
+        <%- @Icon('checkbox', 'icon-unchecked') %>
+        <%- @Icon('checkbox-checked', 'icon-checked') %>
+      </span>
+      <%- @T('Mark the chat read in Avito when an agent replies') %>
+    </label>
+  </div>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_webhook_base_url"><%- @T('Public URL for the webhook') %></label>
+    </div>
+    <div class="controls">
+      <input id="avito_webhook_base_url" type="url" name="webhook_base_url" value="<%= @options.webhook_base_url %>" placeholder="<%= App.Config.get('http_type') %>://<%= App.Config.get('fqdn') %>" class="form-control" autocomplete="off">
+    </div>
+    <p class="help-text"><%- @T('Leave empty to use this system\'s address. Avito must be able to reach it.') %></p>
+  </div>
+</fieldset>

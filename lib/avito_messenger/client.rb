@@ -140,14 +140,23 @@ module AvitoMessenger
       refresh_token! if !@token&.usable?(@clock.call)
       response = request(method, path, bearer: @token.access_token, **)
 
-      # Once: a cached token can be revoked before its expiry. A second 401 is reported as is.
-      if response.status == 401
+      # Once: a cached token can be revoked before its expiry. A second refusal is reported as is.
+      if token_refused?(response)
         refresh_token!
         response = request(method, path, bearer: @token.access_token, **)
       end
 
       check!(response)
       parse(response)
+    end
+
+    # Avito refuses a bad token with 401, or with 403 and {"result": {"message": "invalid access token"}}
+    # (seen on the live API on 2026-10-20). Any other 403 is a real refusal and is not retried.
+    def token_refused?(response)
+      return true if response.status == 401
+      return false if response.status != 403
+
+      response.body.to_s.match?(/token/i)
     end
 
     def request(method, path, bearer: nil, query: {}, lists: {}, json: nil, form: nil, multipart: nil)
@@ -226,7 +235,7 @@ module AvitoMessenger
     end
 
     # Avito spells errors several ways: {"error": {"code", "message"}}, {"error": "...", "error_description"},
-    # {"message": "..."}.
+    # {"result": {"status": false, "message": "..."}}, {"message": "..."}.
     def error_message(data)
       return nil if !data.is_a?(Hash)
 
@@ -235,7 +244,7 @@ module AvitoMessenger
         case error
         when Hash   then error['message'] || error['code']
         when String then [error, data['error_description']].compact.join(': ')
-        else data['message']
+        else data.dig('result', 'message') || data['message']
         end
       message.to_s.empty? ? nil : message.to_s
     end

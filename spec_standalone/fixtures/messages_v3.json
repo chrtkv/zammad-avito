@@ -1,0 +1,47 @@
+[
+  {
+    "id": "m3",
+    "author_id": 12345678,
+    "created": 1760900300,
+    "direction": "out",
+    "type": "text",
+    "content": { "text": "Да, в наличии. Отправить ссылку на оплату?" },
+    "is_read": false,
+    "read": null
+  },
+  {
+    "id": "m2",
+    "author_id": 87654321,
+    "created": 1760900100,
+    "direction": "in",
+    "type": "image",
+    "content": {
+      "image": {
+        "sizes": {
+          "140x105": "https://img.example/140.jpg",
+          "1280x960": "https://img.example/1280.jpg",
+          "640x480": "https://img.example/640.jpg"
+        }
+      }
+    },
+    "is_read": true,
+    "read": 1760900110,
+    "quote": {
+      "id": "m1",
+      "author_id": 87654321,
+      "created": 1760900000,
+      "type": "text",
+      "content": { "text": "Ещё в наличии?" }
+    }
+  },
+  {
+    "id": "m1",
+    "author_id": 87654321,
+    "created": 1760900000,
+    "direction": "in",
+    "type": "text",
+    "content": { "text": "Ещё в наличии?" },
+    "is_read": true,
+    "read": 1760900050
+  }
+]

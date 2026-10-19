@@ -1,0 +1,22 @@
+{
+  "_comment": "Built from the documented v3 webhook schema, not captured from Avito. Replace with a real delivery once the account has the Messenger API subscription.",
+  "id": "f8b1f2c4-5d0e-4a1b-9a57-3b9c2a6d1e10",
+  "version": "v3.0.0",
+  "timestamp": 1760900000,
+  "payload": {
+    "type": "message",
+    "value": {
+      "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "chat_id": "u2i-AbCdEfGhIjKlMnOpQrStUv",
+      "user_id": 12345678,
+      "author_id": 87654321,
+      "created": 1760899990,
+      "type": "text",
+      "chat_type": "u2i",
+      "content": { "text": "Здравствуйте! Ещё в наличии?" },
+      "item_id": 1234567890,
+      "published_at": "2025-10-19T18:53:10Z",
+      "read": null
+    }
+  }
+}

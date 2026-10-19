@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Standalone specs for lib/avito_messenger, in the Ruby version Zammad 7.2 runs on.
+# Usage: bin/test [rspec args...]
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+ruby_image="ruby:3.4.9-slim"
+
+docker run --rm \
+  -v "$root:/app" \
+  -v zammad-avito-bundle:/usr/local/bundle \
+  -w /app \
+  -e BUNDLE_GEMFILE=/app/spec_standalone/Gemfile \
+  -e BUNDLE_APP_CONFIG=/usr/local/bundle \
+  "$ruby_image" \
+  sh -c 'bundle check >/dev/null 2>&1 || bundle install --quiet; exec bundle exec rspec --default-path spec_standalone -I spec_standalone --require spec_helper "$@"' rspec "$@"

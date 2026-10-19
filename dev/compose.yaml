@@ -1,0 +1,44 @@
+# Zammad test environment for the package: Postgres, Redis and a Ruby container holding Zammad's source
+# (.zammad/, a clone of the target tag) with the package files copied over it. Driven by bin/zammad-spec.
+name: zammad-avito-dev
+
+services:
+  zammad:
+    build: .
+    working_dir: /zammad
+    environment:
+      DATABASE_URL: postgres://zammad:zammad@postgresql:5432
+      REDIS_URL: redis://redis:6379
+      MEMCACHE_SERVERS: memcached:11211
+      CI_SKIP_ASSETS_PRECOMPILE: 'true'
+      CI_SKIP_DB_RESET: 'true'
+      TZ: Europe/London
+      Z_LOCALES: en-us:ru
+    depends_on:
+      - postgresql
+      - redis
+      - memcached
+    volumes:
+      - ..:/package:ro
+      - ../.zammad:/zammad
+      - bundle:/bundle
+    command: sleep infinity
+
+  postgresql:
+    image: postgres:17.5-alpine
+    environment:
+      POSTGRES_DB: zammad_development
+      POSTGRES_USER: zammad
+      POSTGRES_PASSWORD: zammad
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    image: redis:7.0
+
+  memcached:
+    image: memcached:1.6.38-alpine
+    command: memcached -m 64M
+
+volumes:
+  bundle:

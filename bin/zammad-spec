@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Runs the package's Zammad specs inside Zammad's own source tree.
+#
+#   bin/zammad-spec                              # all package specs
+#   bin/zammad-spec spec/requests/channels_avito_spec.rb:12
+#   bin/zammad-spec --prepare                    # (re)create the test database first
+#
+# Needs .zammad/: git clone --depth 1 --branch <tag> https://github.com/zammad/zammad.git .zammad
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+compose=(docker compose -f "$root/dev/compose.yaml")
+
+[ -d "$root/.zammad/app" ] || { echo "no Zammad source in .zammad/, see the header of $0" >&2; exit 1; }
+
+prepare=0
+if [ "${1:-}" = "--prepare" ]; then prepare=1; shift; fi
+
+"${compose[@]}" up -d --build --wait zammad >/dev/null
+
+# Package files over the Zammad tree. Files copied last time but gone from the package are removed first,
+# so a rename leaves no stale copy behind.
+"${compose[@]}" exec -T zammad bash -s <<'EOF'
+set -euo pipefail
+cd /zammad
+manifest=.avito-package-files
+if [ -f "$manifest" ]; then xargs -r rm -f < "$manifest"; fi
+(cd /package && find app config db lib spec -type f 2>/dev/null | grep -v '^lib/tasks/') > "$manifest" || true
+rsync -a --files-from="$manifest" /package/ /zammad/
+[ -f config/database.yml ] || cp config/database/database.yml config/database.yml
+bundle check >/dev/null 2>&1 || bundle install --quiet
+EOF
+
+if [ "$prepare" = 1 ] || ! "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails runner "exit(Setting.exists?(name: %q(system_init_done)) ? 0 : 1)"' >/dev/null 2>&1; then
+  "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails db:drop db:create zammad:ci:test:prepare'
+fi
+
+if [ "$#" -eq 0 ]; then
+  set -- $(cd "$root" && find spec -name '*_spec.rb' | sort)
+fi
+
+"${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rspec "$@"' rspec "$@"

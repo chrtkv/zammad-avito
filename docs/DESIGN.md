@@ -150,6 +150,10 @@ On 2026-10-20, with the Messenger API subscription paid:
 - **The chat list is sorted by `last_message.created`, newest first.** `updated` also moves on reads and is
   out of that order, so the poll's cursor is the last message's time.
 - **An invalid token gets 403** `{"result": {"message": "invalid access token"}}`, not 401.
+- **Avito drops new connections from a busy address.** Later the same day connects from our server took
+  15 s every other time (the first SYNs dropped) while the rest went through in 0.03 s. The transport keeps
+  one connection open per job and poll instead of opening one per request, waits up to 20 s for a connect,
+  and opens a timed-out connection once more (nothing was sent on it, so even a POST is safe to repeat).
 - **Bursts get throttled.** After about a hundred requests in a few minutes from one address, connections to
   `api.avito.ru` from that address took over 20 s for a while (another address was unaffected). The poll
   reads only chats with new messages, so it stays far below that.

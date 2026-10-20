@@ -131,13 +131,28 @@ only the latest ~1100 of each are reachable.
   or "Максимальный" for services). It is surfaced as such, not as a generic error.
 - 429 carries a retry delay; the job backs off instead of retrying immediately.
 
-## To verify against the live API
+## Checked against the live API
 
-These are not settled by the documentation and need a subscribed account:
+On 2026-10-20, with the Messenger API subscription paid:
+
+- **The subscription covers some chats, not all.** Most message lists answer 200, some still answer 402
+  with the "subscribe" message; Avito sells the subscription per category of listings. The poll skips such a
+  chat and counts it; a reply to it fails at once with Avito's message.
+- **List parameters are comma-separated.** `chat_types=u2i,u2u` returns both kinds; repeated keys return
+  `u2i` alone.
+- **The chat list is sorted by `last_message.created`, newest first.** `updated` also moves on reads and is
+  out of that order, so the poll's cursor is the last message's time.
+- **An invalid token gets 403** `{"result": {"message": "invalid access token"}}`, not 401.
+- **Bursts get throttled.** After about a hundred requests in a few minutes from one address, connections to
+  `api.avito.ru` from that address took over 20 s for a while (another address was unaffected). The poll
+  reads only chats with new messages, so it stays far below that.
+
+## Still to verify against the live API
+
+These need the channel running on a public address, with the webhook subscribed:
 
 1. Does the webhook deliver own messages (`author_id == user_id`)?
 2. Is the id returned by `send` the same id the webhook and the message list report?
-3. In what order does the chat list come back (by `updated`, descending)?
-4. How are array query parameters (`chat_types`, `voice_ids`) encoded: repeated keys or comma-separated?
-5. Are buyer ids stable across two of our accounts?
-6. The webhook sender's user agent and source addresses (for firewalls and fail2ban rules on the way in).
+3. Are buyer ids stable across two of our accounts?
+4. The webhook sender's user agent and source addresses (for firewalls and fail2ban rules on the way in).
+5. Do the chats the subscription does not cover reach the webhook at all?

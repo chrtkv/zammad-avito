@@ -2,7 +2,9 @@ require 'set'
 
 module AvitoMessenger
   # What the reconciliation poll reads and imports. Pure decisions: the caller does the HTTP and the Zammad
-  # work. The cursor is the largest chat `updated` (Unix seconds) already handled.
+  # work. The cursor is the latest chat change (Unix seconds) already handled, a change being the chat's last
+  # message: the list comes sorted by last_message.created, newest first (live API, 2026-10-20), while
+  # `updated` also moves on reads and is out of that order.
   #
   # Both lists stop at offset 1000, so only the latest ~1100 chats, and ~1100 messages per chat, are reachable.
   module Reconciler
@@ -13,18 +15,18 @@ module AvitoMessenger
     # idempotent by message id.
     def chats_to_sync(chats, cursor:)
       chats
-        .select { |chat| cursor.nil? || updated(chat) >= cursor }
+        .select { |chat| cursor.nil? || changed_at(chat) >= cursor }
         .uniq { |chat| chat['id'] }
-        .sort_by { |chat| [updated(chat), chat['id'].to_s] }
+        .sort_by { |chat| [changed_at(chat), chat['id'].to_s] }
     end
 
-    # Whether the next page of the chat list may still hold chats changed since the cursor. The order of the
-    # list is not documented; this stops early only when a whole page is older than the cursor.
+    # Whether the next page of the chat list may still hold chats changed since the cursor: not once a whole
+    # page is older than it.
     def more_chats?(page, cursor:, offset:, limit: Client::PAGE_LIMIT)
       return false if page.size < limit
       return false if offset + limit > Client::MAX_OFFSET
 
-      cursor.nil? || page.any? { |chat| updated(chat) >= cursor }
+      cursor.nil? || page.any? { |chat| changed_at(chat) >= cursor }
     end
 
     # Messages not imported yet, in the order they were written.
@@ -47,8 +49,10 @@ module AvitoMessenger
       true
     end
 
-    def updated(chat)
-      Message.integer(chat['updated']) || 0
+    def changed_at(chat)
+      last_message = chat['last_message']
+      created = Message.integer(last_message['created']) if last_message.is_a?(Hash)
+      created || Message.integer(chat['updated']) || 0
     end
   end
 end

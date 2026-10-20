@@ -13,6 +13,12 @@ RSpec.describe AvitoMessenger::Reconciler do
       expect(described_class.chats_to_sync(chats, cursor: 200).map { |c| c['id'] }).to eq(%w[b d c])
     end
 
+    it 'goes by the last message, not by `updated`, which also moves on reads' do
+      read_only = { 'id' => 'r', 'updated' => 500, 'last_message' => { 'created' => 100 } }
+      written   = { 'id' => 'w', 'updated' => 300, 'last_message' => { 'created' => 300 } }
+      expect(described_class.chats_to_sync([read_only, written], cursor: 200).map { |c| c['id'] }).to eq(%w[w])
+    end
+
     it 'takes everything on the first run' do
       expect(described_class.chats_to_sync([chat('a', 5), chat('a', 5)], cursor: nil).size).to eq(1)
     end

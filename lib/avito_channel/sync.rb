@@ -3,7 +3,7 @@ module AvitoChannel
   # the webhook did not deliver, including messages written in Avito itself. Run by Channel::Driver::Avito
   # from Zammad's "Check channels" scheduler.
   #
-  # The cursor (channel.preferences[:avito_cursor]) is the latest chat `updated` handled. On the first run it
+  # The cursor (channel.preferences[:avito_cursor]) is the latest chat change handled (see Reconciler). On the first run it
   # starts at "now" unless the account asks for a backfill (options[:sync][:backfill_days]).
   class Sync
     # Messages older than the cursor by more than this are history from before the account was connected,
@@ -42,7 +42,7 @@ module AvitoChannel
         rescue AvitoMessenger::Error::SubscriptionRequired => e
           unavailable << e
         end
-        save_cursor(AvitoMessenger::Reconciler.updated(chat))
+        save_cursor(AvitoMessenger::Reconciler.changed_at(chat))
       end
       raise unavailable.first if unavailable.any? && unavailable.size == chats.size
 
@@ -79,7 +79,7 @@ module AvitoChannel
 
       AvitoMessenger::Reconciler
         .chats_to_sync(chats, cursor:)
-        .select { |chat| AvitoMessenger::Reconciler.updated(chat) <= horizon.to_i }
+        .select { |chat| AvitoMessenger::Reconciler.changed_at(chat) <= horizon.to_i }
     end
 
     def sync_chat(chat, since)

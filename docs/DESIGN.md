@@ -135,8 +135,9 @@ only the latest ~1100 of each are reachable.
 
 On 2026-10-20, with the Messenger API subscription paid:
 
-- **The subscription covers some chats, not all.** Most message lists answer 200, some still answer 402
-  with the "subscribe" message; Avito sells the subscription per category of listings. The poll skips such a
+- **The subscription covers some chats, not all.** Of the two chats read, one message list answered 200,
+  the other still 402 with the "subscribe" message (the share was not measured: the run was cut short by
+  throttling). Avito's documentation sells the subscription per category of listings, which would explain it. The poll skips such a
   chat and counts it; a reply to it fails at once with Avito's message.
 - **List parameters are comma-separated.** `chat_types=u2i,u2u` returns both kinds; repeated keys return
   `u2i` alone.

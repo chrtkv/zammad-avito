@@ -156,16 +156,20 @@ module AvitoChannel
     def create_customer(message, buyer_id)
       profile = chat_user(message, buyer_id) || {}
       login   = "avito.#{buyer_id}"
-      user    = User.find_by(login: login) || User.create!(
-        login:         login,
-        firstname:     profile['name'].presence || "Avito #{buyer_id}",
-        lastname:      '',
-        note:          profile.dig('public_user_profile', 'url').to_s,
-        active:        true,
-        role_ids:      Role.signup_role_ids,
-        updated_by_id: 1,
-        created_by_id: 1,
-      )
+      user    = User.find_by(login: login)
+      if !user
+        user = User.create!(
+          login:         login,
+          firstname:     profile['name'].presence || "Avito #{buyer_id}",
+          lastname:      '',
+          note:          profile.dig('public_user_profile', 'url').to_s,
+          active:        true,
+          role_ids:      Role.signup_role_ids,
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        AvitoChannel.add_avatar(user, profile)
+      end
       Authorization.create!(provider: AUTH_PROVIDER, uid: buyer_id.to_s, username: login, user_id: user.id)
       user
     end
@@ -250,7 +254,7 @@ module AvitoChannel
 
     def create_article(message, ticket, customer)
       from_customer = message.origin == :customer
-      creator_id    = from_customer ? customer.id : 1
+      creator_id    = article_author_id(message, customer)
       UserInfo.current_user_id = creator_id
 
       article = Ticket::Article.create!(
@@ -281,6 +285,16 @@ module AvitoChannel
       # Zammad names the sender of an agent article after its author, which for an import is the system user.
       article.update!(from: account_name) if !from_customer && article.from != account_name
       article
+    end
+
+    # Customers write their own messages; messages written in Avito itself go under the account's service
+    # user; Avito's notices under Zammad's system user.
+    def article_author_id(message, customer)
+      case message.origin
+      when :customer then customer.id
+      when :own      then ServiceUser.for(channel, chat_user(message, user_id)).id
+      else 1
+      end
     end
 
     # Zammad wants a body; images and voice get a label, their content travels as an attachment.

@@ -111,6 +111,9 @@ only the latest ~1100 of each are reachable.
   gives no phone or e-mail. Avito notes that user ids are hashed; whether they are stable across our accounts
   is unverified, so a buyer writing to two accounts may become two users.
 - The item (listing) a chat is about goes into the ticket title and preferences.
+- Messages written in Avito itself are created by a service user of the account (login
+  `avito.account.<user_id>`, inactive, named after the shop), not by Zammad's system user, so they show with
+  the shop's Avito avatar. Customers get the avatar of their Avito profile when they are created.
 
 ## Getting replies out
 

@@ -12,6 +12,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose=(docker compose -f "$root/dev/preview/compose.yaml")
+# With a tunnel host set, every command keeps the live override, so rebuilding assets does not cut it off.
+if [ -n "${AVITO_TUNNEL_HOST:-}" ]; then compose+=(-f "$root/dev/preview/live.yaml"); fi
 admin_env="$root/dev/preview/admin.env"
 
 case "${1:-up}" in
@@ -22,7 +24,7 @@ case "${1:-up}" in
         -L 127.0.0.1:18443:api.avito.ru:443 "$AVITO_TUNNEL_HOST"
     fi
     docker build -q -f "$root/dev/preview/Dockerfile" -t zammad-avito-preview:dev "$root" >/dev/null
-    "${compose[@]}" -f "$root/dev/preview/live.yaml" up -d
+    "${compose[@]}" up -d
     echo "live: Avito API through $AVITO_TUNNEL_HOST (tunnel on 127.0.0.1:18443)"
     exit 0
     ;;

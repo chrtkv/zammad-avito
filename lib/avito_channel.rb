@@ -59,6 +59,23 @@ module AvitoChannel
     AuditLog.suspend { channel.save! }
   end
 
+  # Gives a user the avatar of their Avito profile (a chat participant's public_user_profile). Zammad fetches
+  # the image itself; a picture that cannot be fetched leaves the initials, never fails the import.
+  def self.add_avatar(user, profile)
+    avatar = profile.is_a?(Hash) ? profile.dig('public_user_profile', 'avatar') : nil
+    return if !avatar.is_a?(Hash)
+
+    url = (avatar['images'].is_a?(Hash) && avatar['images']['256x256']).presence || avatar['default'].presence
+    return if url.blank?
+
+    avatar = Avatar.add(object: 'User', o_id: user.id, url: url, source: 'avito', deletable: true,
+                        updated_by_id: 1, created_by_id: 1)
+    # Avatar.add stores the picture; the user shows it once it is linked, as AvatarCreateJob does.
+    user.update!(image: avatar.store_hash) if avatar
+  rescue => e
+    Rails.logger.warn "Avito avatar of user #{user.id} not set: #{e.message}"
+  end
+
   # The internal note on a ticket whose chat Avito does not give out through the API.
   def self.uncovered_note(item_url)
     locale = Setting.get('locale_default') || 'en-us'

@@ -46,15 +46,15 @@
     </div>
     <p class="help-text"><%- @T('Messages arrive through the webhook at once; this check picks up what it missed and messages written in Avito itself.') %></p>
   </div>
-  <div class="checkbox form-group">
-    <label class="inline-label">
-      <span class="checkbox-replacement-holder">
-        <input type="checkbox" name="mark_read" value="true" class="checkbox-replacement" <% if @options.mark_read isnt false: %>checked<% end %>>
+  <div class="form-group">
+    <div class="checkbox checkbox--list">
+      <label class="checkbox-replacement">
+        <input type="checkbox" name="mark_read" value="true" <% if @options.mark_read isnt false: %>checked<% end %>>
         <%- @Icon('checkbox', 'icon-unchecked') %>
         <%- @Icon('checkbox-checked', 'icon-checked') %>
-      </span>
-      <%- @T('Mark the chat read in Avito when an agent replies') %>
-    </label>
+        <span class="label-text"><%- @T('Mark the chat read in Avito when an agent replies') %></span>
+      </label>
+    </div>
   </div>
   <div class="input form-group">
     <div class="formGroup-label">

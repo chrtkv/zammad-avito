@@ -3,6 +3,7 @@ module AvitoChannelSpecHelpers
   AVITO_API      = 'https://api.avito.ru'.freeze
   AVITO_USER_ID  = 12_345_678
   AVITO_BUYER_ID = 87_654_321
+  PNG            = Base64.decode64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
 
   def create_avito_channel(user_id: AVITO_USER_ID, name: 'Demo Shop', group: Group.find_by(name: 'Users'), **options)
     AvitoChannel::Setup.ensure!
@@ -56,9 +57,12 @@ module AvitoChannelSpecHelpers
       'updated' => updated,
       'context' => item ? { 'type' => 'item', 'value' => item } : nil,
       'users'   => [
-        { 'id' => user_id, 'name' => 'Demo Shop' },
+        { 'id' => user_id, 'name' => 'Demo Shop',
+          'public_user_profile' => { 'user_id' => user_id, 'avatar' => { 'default' => "https://www.avito.ru/test-avatar/#{user_id}.png",
+                                                                         'images'  => { '256x256' => "https://www.avito.ru/test-avatar/#{user_id}-256.png" } } } },
         { 'id' => buyer_id, 'name' => buyer_name,
-          'public_user_profile' => { 'user_id' => buyer_id, 'url' => "https://www.avito.ru/user/#{buyer_id}" } },
+          'public_user_profile' => { 'user_id' => buyer_id, 'url' => "https://www.avito.ru/user/#{buyer_id}",
+                                     'avatar' => { 'images' => { '256x256' => "https://www.avito.ru/test-avatar/#{buyer_id}-256.png" } } } },
       ],
     }.compact
   end
@@ -77,4 +81,10 @@ end
 
 RSpec.configure do |config|
   config.include AvitoChannelSpecHelpers
+
+  # Avatars of Avito users: a tiny PNG for any of them, unless a spec says otherwise.
+  config.before do
+    stub_request(:get, %r{\Ahttps://www\.avito\.ru/test-avatar/})
+      .to_return(status: 200, body: AvitoChannelSpecHelpers::PNG, headers: { 'Content-Type' => 'image/png' })
+  end
 end

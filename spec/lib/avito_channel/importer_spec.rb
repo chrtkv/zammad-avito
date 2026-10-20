@@ -20,6 +20,11 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
   describe 'a customer message' do
     let(:article) { import(avito_message(id: 'm1', text: 'Ещё в наличии?')) }
 
+    it 'gives the customer their Avito avatar' do
+      expect(article.ticket.customer.image).to be_present.and(not_eq('none'))
+      expect(a_request(:get, "https://www.avito.ru/test-avatar/#{buyer}-256.png")).to have_been_made
+    end
+
     it 'creates the customer from the chat' do
       customer = article.ticket.customer
       expect(customer).to have_attributes(login: "avito.#{buyer}", firstname: 'Иван')
@@ -92,6 +97,23 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
       expect(article.sender.name).to eq('Agent')
       expect(article).to have_attributes(internal: false, from: 'Demo Shop', to: 'Иван')
       expect(article.preferences.dig('avito', 'origin')).to eq('avito')
+    end
+
+    it 'is filed under the account\'s service user, wearing the shop\'s Avito avatar' do
+      author = import(own).created_by
+      expect(author).to have_attributes(login: "avito.account.#{account}", firstname: 'Demo Shop', lastname: '(Avito)', active: false)
+      expect(author.image).to be_present.and(not_eq('none'))
+      expect(a_request(:get, "https://www.avito.ru/test-avatar/#{account}-256.png")).to have_been_made
+      expect(import(avito_message(id: 'm3', author_id: account, text: 'Ещё')).created_by).to eq(author)
+    end
+
+    it 'keeps one service user per account' do
+      second = create_avito_channel(user_id: 111, name: 'Second shop')
+      stub_avito_chat(avito_chat(user_id: 111), user_id: 111)
+      theirs = described_class.new(second).import(AvitoMessenger::Message.from_hash(avito_message(id: 'x1', user_id: 111, author_id: 111)))
+      ours   = import(own)
+      expect(theirs.created_by).not_to eq(ours.created_by)
+      expect(theirs.created_by.firstname).to eq('Second shop')
     end
 
     it 'is not sent back to Avito', performs_jobs: true do

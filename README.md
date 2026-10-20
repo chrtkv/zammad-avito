@@ -15,7 +15,8 @@ interface show up in the ticket as well.
   ticket per chat, titled after the listing; the buyer becomes a customer. Images and voice messages arrive as
   attachments.
 - **Messages written in Avito itself** (the website, the app, autoresponders) are added to the ticket as agent
-  replies marked as coming from Avito, and never sent back.
+  replies marked as coming from Avito, and never sent back. They are filed under a service user per account,
+  named after the shop and wearing its Avito avatar; customers get their Avito avatars too.
 - **Replies**: the "reply" action on an Avito message; long replies go out as several 1000-character
   messages, images as images. Other attachments are refused with a clear delivery error, before anything
   is sent.

@@ -154,6 +154,10 @@ On 2026-10-20, with the Messenger API subscription paid:
   15 s every other time (the first SYNs dropped) while the rest went through in 0.03 s. The transport keeps
   one connection open per job and poll instead of opening one per request, waits up to 20 s for a connect,
   and opens a timed-out connection once more (nothing was sent on it, so even a POST is safe to repeat).
+  A 30-minute watch from the server with our own traffic stopped (one request a minute) showed connects of
+  22–34 s for the first 15 minutes, then 0.03 s every time for the remaining 17: the throttling wears off by
+  itself and was most likely set off by our own testing (a poll every minute, a new connection per request,
+  plus retries). Hence the default poll of 5 minutes and one connection per poll.
 - **Bursts get throttled.** After about a hundred requests in a few minutes from one address, connections to
   `api.avito.ru` from that address took over 20 s for a while (another address was unaffected). The poll
   reads only chats with new messages, so it stays far below that.

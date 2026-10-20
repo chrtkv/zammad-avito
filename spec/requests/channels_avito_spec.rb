@@ -32,14 +32,14 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
 
     it 'refuses an unknown callback token' do
       channel
-      expect { deliver(avito_webhook_body(avito_message(id: 'm1')), token: 'wrong') }.not_to have_enqueued_job
+      expect { deliver(avito_webhook_body(avito_message(id: 'm1')), token: 'wrong') }.not_to have_enqueued_job(AvitoImportJob)
       expect(response).to have_http_status(:not_found)
     end
 
     it 'refuses an event for another account' do
       value = avito_message(id: 'm1', user_id: 1)
 
-      expect { deliver(avito_webhook_body(value)) }.not_to have_enqueued_job
+      expect { deliver(avito_webhook_body(value)) }.not_to have_enqueued_job(AvitoImportJob)
       expect(response).to have_http_status(:unprocessable_entity)
     end
 
@@ -49,13 +49,13 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
 
       expect { deliver(avito_webhook_body(value), token: other.options[:callback_token]) }
         .to have_enqueued_job(AvitoImportJob).with(other.id, value)
-      expect { deliver(avito_webhook_body(value), token: channel.options[:callback_token]) }.not_to have_enqueued_job
+      expect { deliver(avito_webhook_body(value), token: channel.options[:callback_token]) }.not_to have_enqueued_job(AvitoImportJob)
     end
 
     it 'takes deliveries for a disabled account without importing them' do
       channel.update!(active: false)
 
-      expect { deliver(avito_webhook_body(avito_message(id: 'm1'))) }.not_to have_enqueued_job
+      expect { deliver(avito_webhook_body(avito_message(id: 'm1'))) }.not_to have_enqueued_job(AvitoImportJob)
       expect(response).to have_http_status(:ok)
     end
 

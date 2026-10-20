@@ -20,7 +20,7 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
   end
 
   it 'starts at "now" on the first run, without importing history' do
-    expect(sync.run).to eq(chats: 0, imported: 0)
+    expect(sync.run).to eq(chats: 0, imported: 0, unavailable: 0)
     expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
     expect(a_request(:get, %r{/chats})).not_to have_been_made
   end
@@ -38,7 +38,7 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
                       list_message('m1', created: now - 6.minutes, text: 'Вопрос'),
                     ])
 
-      expect(sync.run).to eq(chats: 1, imported: 2)
+      expect(sync.run).to eq(chats: 1, imported: 2, unavailable: 0)
 
       articles = Ticket::Article.where(message_id: ["avito.#{account}.chat-1.m1", "avito.#{account}.chat-1.m2"]).order(:created_at)
       expect(articles.map { |a| [a.body, a.sender.name] }).to eq([%w[Вопрос Customer], ['Ответ из Авито', 'Agent']])
@@ -51,14 +51,35 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
       stub_chats(avito_chat(updated: (now - 5.minutes).to_i))
       stub_messages('chat-1', [list_message('m1', created: now - 6.minutes)])
 
-      expect(sync.run).to eq(chats: 1, imported: 0)
+      expect(sync.run).to eq(chats: 1, imported: 0, unavailable: 0)
     end
 
     it 'leaves chats changed in the last minute for the next run' do
       stub_chats(avito_chat(updated: (now - 10.seconds).to_i))
 
-      expect(sync.run).to eq(chats: 0, imported: 0)
+      expect(sync.run).to eq(chats: 0, imported: 0, unavailable: 0)
       expect(channel.reload.preferences[:avito_cursor]).to eq(cursor)
+    end
+
+    # Seen on the live API on 2026-10-20: with the subscription paid, some chats still answer 402.
+    it 'skips a chat the subscription does not cover and goes on with the others' do
+      covered   = avito_chat(id: 'chat-1', updated: (now - 5.minutes).to_i)
+      uncovered = avito_chat(id: 'chat-2', updated: (now - 4.minutes).to_i)
+      stub_chats(covered, uncovered)
+      stub_messages('chat-1', [list_message('m1', created: now - 5.minutes)])
+      stub_avito(:get, "/messenger/v3/accounts/#{account}/chats/chat-2/messages/", status: 402,
+                                                                                  body: { code: 402, message: 'Перейдите на подписку с API мессенджера' })
+
+      expect(sync.run).to eq(chats: 2, imported: 1, unavailable: 1)
+      expect(channel.reload.preferences[:avito_cursor]).to eq(uncovered['updated'])
+    end
+
+    it 'fails when no chat is covered, so the channel shows the missing subscription' do
+      stub_chats(avito_chat(updated: (now - 5.minutes).to_i))
+      stub_avito(:get, "/messenger/v3/accounts/#{account}/chats/chat-1/messages/", status: 402,
+                                                                                  body: { code: 402, message: 'Перейдите на подписку с API мессенджера' })
+
+      expect { sync.run }.to raise_error(AvitoMessenger::Error::SubscriptionRequired)
     end
 
     it 'does not import history older than the cursor from a chat that woke up' do
@@ -68,7 +89,7 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
                       list_message('ancient', created: now - 30.days),
                     ])
 
-      expect(sync.run).to eq(chats: 1, imported: 1)
+      expect(sync.run).to eq(chats: 1, imported: 1, unavailable: 0)
       expect(AvitoMessageRef.known?(channel, 'ancient')).to be(false)
     end
   end

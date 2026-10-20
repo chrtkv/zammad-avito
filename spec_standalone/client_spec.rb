@@ -169,10 +169,11 @@ RSpec.describe AvitoMessenger::Client do
   describe '#chats' do
     let(:responses) { [[200, { 'chats' => [{ 'id' => chat_id, 'updated' => 1_760_900_300 }] }]] }
 
-    it 'sends chat types as repeated keys' do
+    # Repeated keys made the live API return u2i chats alone (2026-10-20).
+    it 'sends chat types comma-separated' do
       expect(client.chats(user_id).map { |chat| chat['id'] }).to eq([chat_id])
       expect(transport.requests.first.query_pairs)
-        .to contain_exactly(%w[limit 100], %w[offset 0], %w[chat_types u2i], %w[chat_types u2u])
+        .to contain_exactly(%w[limit 100], %w[offset 0], ['chat_types', 'u2i,u2u'])
     end
   end
 

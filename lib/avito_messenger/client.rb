@@ -177,10 +177,11 @@ module AvitoMessenger
       @transport.call(method, url(path, query, lists), headers:, body:)
     end
 
-    # Array parameters go as repeated keys (OpenAPI's default form style): chat_types=u2i&chat_types=u2u.
+    # Array parameters go comma-separated: chat_types=u2i,u2u. Avito takes only one value of repeated keys
+    # (checked on the live API on 2026-10-20: repeated keys returned u2i chats alone).
     def url(path, query, lists)
       pairs = query.map { |key, value| [key.to_s, value.to_s] }
-      lists.each { |key, values| Array(values).each { |value| pairs << [key.to_s, value.to_s] } }
+      lists.each { |key, values| pairs << [key.to_s, Array(values).join(',')] if Array(values).any? }
       pairs.empty? ? "#{@base_url}#{path}" : "#{@base_url}#{path}?#{URI.encode_www_form(pairs)}"
     end
 

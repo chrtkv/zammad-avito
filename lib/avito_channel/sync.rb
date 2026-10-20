@@ -19,24 +19,34 @@ module AvitoChannel
       @now      = now
     end
 
-    # { chats:, imported: }
+    # { chats:, imported:, unavailable: }
+    #
+    # The subscription can cover some chats and not others (Avito sells it per category of listings): such a
+    # chat answers 402 and is skipped, so it does not hold up the rest. When every chat answers 402, the
+    # subscription is missing altogether and the error is raised, for the channel to show it.
     def run
       cursor = channel.preferences[:avito_cursor]
       since  = cursor ? Time.zone.at(cursor) - CLOCK_SLACK : backfill_since
 
       if since.nil?
         save_cursor(horizon.to_i)
-        return { chats: 0, imported: 0 }
+        return { chats: 0, imported: 0, unavailable: 0 }
       end
 
-      chats    = changed_chats(cursor || since.to_i)
-      imported = 0
+      chats       = changed_chats(cursor || since.to_i)
+      imported    = 0
+      unavailable = []
       chats.each do |chat|
-        imported += sync_chat(chat, since)
+        begin
+          imported += sync_chat(chat, since)
+        rescue AvitoMessenger::Error::SubscriptionRequired => e
+          unavailable << e
+        end
         save_cursor(AvitoMessenger::Reconciler.updated(chat))
       end
+      raise unavailable.first if unavailable.any? && unavailable.size == chats.size
 
-      { chats: chats.size, imported: imported }
+      { chats: chats.size, imported: imported, unavailable: unavailable.size }
     end
 
     private

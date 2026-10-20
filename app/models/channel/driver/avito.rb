@@ -14,9 +14,18 @@ class Channel::Driver::Avito
 
     {
       result: 'ok',
-      notice: "#{result[:imported]} messages from #{result[:chats]} chats",
+      notice: notice(result),
     }
   end
 
   def disconnect; end
+
+  private
+
+  def notice(result)
+    text = "#{result[:imported]} messages from #{result[:chats]} chats"
+    return text if result[:unavailable].to_i.zero?
+
+    "#{text}; #{result[:unavailable]} chats not covered by the Messenger API subscription"
+  end
 end

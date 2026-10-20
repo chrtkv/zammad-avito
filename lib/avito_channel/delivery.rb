@@ -89,6 +89,13 @@ module AvitoChannel
     end
 
     def send_piece(piece)
+      send_piece!(piece)
+    rescue AvitoMessenger::Error::SubscriptionRequired => e
+      # The subscription does not cover this chat's listing: retrying cannot help.
+      raise Undeliverable, e.message
+    end
+
+    def send_piece!(piece)
       if piece['kind'] == 'text'
         @client.send_text(@user_id, @chat_id, piece['text']).id
       else

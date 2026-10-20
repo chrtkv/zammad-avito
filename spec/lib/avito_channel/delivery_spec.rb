@@ -120,14 +120,23 @@ RSpec.describe 'Avito replies', :aggregate_failures do
       expect(article.reload.preferences.dig('avito', 'pieces').pluck('message_id')).to eq(%w[a1 a2])
     end
 
-    it 'reports a missing Messenger API subscription and retries' do
+    it 'gives up at once on a chat the subscription does not cover' do
       stub_request(:post, send_url).to_return(status: 402, body: { error: { code: 402, message: 'Перейдите на подписку с API мессенджера' } }.to_json)
       article = reply
 
-      expect { described_class.perform_now(article.id) }.to have_enqueued_job(described_class)
+      expect { described_class.perform_now(article.id) }.not_to have_enqueued_job(described_class)
 
       expect(article.reload.preferences['delivery_status']).to eq('fail')
       expect(article.preferences['delivery_status_message']).to include('подписку с API мессенджера')
+      expect(ticket.reload.articles.last.body).to include('Unable to send Avito message')
+    end
+
+    it 'retries a failure that may pass' do
+      stub_request(:post, send_url).to_return(status: 500, body: { message: 'internal error' }.to_json)
+      article = reply
+
+      expect { described_class.perform_now(article.id) }.to have_enqueued_job(described_class)
+      expect(article.reload.preferences['delivery_status']).to eq('fail')
     end
   end
 end

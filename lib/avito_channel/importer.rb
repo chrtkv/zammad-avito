@@ -79,6 +79,13 @@ module AvitoChannel
       channel.options[:user_id]
     end
 
+    # The webhook job and the poll can import two messages of one new chat at the same moment; without this
+    # each would find no ticket and open one. Held until the transaction ends.
+    def lock_chat(chat_id)
+      key = Zlib.crc32("avito-chat:#{channel.id}:#{chat_id}")
+      ActiveRecord::Base.connection.select_value("SELECT pg_advisory_xact_lock(#{key.to_i})")
+    end
+
     def chat_ticket(chat_id)
       ref = AvitoMessageRef.where(channel_id: channel.id, chat_id: chat_id.to_s).where.not(ticket_article_id: nil).order(:id).last
       ref && Ticket::Article.find_by(id: ref.ticket_article_id)&.ticket
@@ -122,6 +129,7 @@ module AvitoChannel
     def create(message)
       article = nil
       Transaction.execute(reset_user_id: true, context: 'avito') do
+        lock_chat(message.chat_id)
         UserInfo.current_user_id = 1
         customer = customer_for(message)
         ticket   = ticket_for(message, customer)

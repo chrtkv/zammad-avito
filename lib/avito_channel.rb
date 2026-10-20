@@ -18,6 +18,13 @@ module AvitoChannel
     Channel.where(area: AREA)
   end
 
+  # Where the Avito API is reached. AVITO_API_BASE_URL overrides it, e.g. for a tunnel through another host
+  # (https://api.avito.ru:18443 with api.avito.ru resolving to the tunnel), keeping TLS checked against
+  # Avito's own name.
+  def self.api_base_url
+    ENV['AVITO_API_BASE_URL'].presence || AvitoMessenger::Client::BASE_URL
+  end
+
   def self.article_type
     Ticket::Article::Type.lookup(name: ARTICLE_TYPE) || Setup.ensure!.then { Ticket::Article::Type.lookup(name: ARTICLE_TYPE) }
   end
@@ -37,6 +44,7 @@ module AvitoChannel
       token:         AvitoMessenger::Token.from_h({ access_token: auth[:access_token], expires_at: auth[:access_token_expires_at] }),
       transport:     transport,
       on_token:      ->(token) { store_token(channel, token) },
+      base_url:      api_base_url,
     )
   end
 

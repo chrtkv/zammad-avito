@@ -49,6 +49,9 @@ module AvitoChannel
       end
       raise unavailable.first if unavailable.any? && unavailable.size == chats.size
 
+      # Every chat changed up to the horizon has been seen: the next run starts there, not at the backfill.
+      save_cursor(horizon.to_i)
+
       { chats: chats.size, imported: imported, unavailable: unavailable.size }
     end
 

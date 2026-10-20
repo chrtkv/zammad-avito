@@ -4,6 +4,8 @@
 #   bin/preview          # build, start, compile assets, create the admin
 #   bin/preview assets   # recompile assets after a change to CoffeeScript or templates (rebuild first)
 #   bin/preview down     # stop and delete everything, data included
+#   AVITO_TUNNEL_HOST=user@host bin/preview live
+#                        # reach the real Avito API, through an SSH tunnel via that host (dev/preview/live.yaml)
 #
 # The admin's login and password are written to dev/preview/admin.env (not committed).
 set -euo pipefail
@@ -13,6 +15,17 @@ compose=(docker compose -f "$root/dev/preview/compose.yaml")
 admin_env="$root/dev/preview/admin.env"
 
 case "${1:-up}" in
+  live)
+    : "${AVITO_TUNNEL_HOST:?set AVITO_TUNNEL_HOST=user@host to tunnel to api.avito.ru through}"
+    if ! lsof -nP -iTCP:18443 -sTCP:LISTEN >/dev/null 2>&1; then
+      ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+        -L 127.0.0.1:18443:api.avito.ru:443 "$AVITO_TUNNEL_HOST"
+    fi
+    docker build -q -f "$root/dev/preview/Dockerfile" -t zammad-avito-preview:dev "$root" >/dev/null
+    "${compose[@]}" -f "$root/dev/preview/live.yaml" up -d
+    echo "live: Avito API through $AVITO_TUNNEL_HOST (tunnel on 127.0.0.1:18443)"
+    exit 0
+    ;;
   down)
     "${compose[@]}" down -v
     exit 0

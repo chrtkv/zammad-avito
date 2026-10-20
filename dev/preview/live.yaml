@@ -1,0 +1,15 @@
+# Live mode of the preview (bin/preview live): reaches the real Avito API instead of being cut off from it.
+# Requests go to https://api.avito.ru:18443 on the Mac, where bin/preview opens an SSH tunnel to
+# api.avito.ru:443 through AVITO_TUNNEL_HOST; TLS is still checked against api.avito.ru.
+x-live-env: &live-env
+  http_proxy: ''
+  https_proxy: ''
+  AVITO_API_BASE_URL: https://api.avito.ru:18443
+
+services:
+  zammad-railsserver:
+    environment: *live-env
+    extra_hosts: ['api.avito.ru:host-gateway']
+  scheduler:
+    environment: *live-env
+    extra_hosts: ['api.avito.ru:host-gateway']

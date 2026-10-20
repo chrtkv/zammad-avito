@@ -20,7 +20,7 @@ module AvitoChannel
       group_id = params[:group_id].presence || channel&.group_id
       raise Invalid, __('Please choose a group.') if group_id.blank? || !Group.exists?(id: group_id)
 
-      client  = AvitoMessenger::Client.new(client_id:, client_secret: secret, transport:)
+      client  = AvitoMessenger::Client.new(client_id:, client_secret: secret, transport:, base_url: AvitoChannel.api_base_url)
       account = fetch_account(client)
       user_id = account['id']
       raise Invalid, __('Avito did not return the account id.') if user_id.blank?

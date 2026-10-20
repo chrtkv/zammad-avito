@@ -42,7 +42,7 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
 
       articles = Ticket::Article.where(message_id: ["avito.#{account}.chat-1.m1", "avito.#{account}.chat-1.m2"]).order(:created_at)
       expect(articles.map { |a| [a.body, a.sender.name] }).to eq([%w[Вопрос Customer], ['Ответ из Авито', 'Agent']])
-      expect(channel.reload.preferences[:avito_cursor]).to eq(chat['updated'])
+      expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
       expect(a_request(:get, %r{/chats/old/messages})).not_to have_been_made
     end
 
@@ -58,7 +58,19 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
       stub_chats(avito_chat(updated: (now - 10.seconds).to_i))
 
       expect(sync.run).to eq(chats: 0, imported: 0, unavailable: 0)
-      expect(channel.reload.preferences[:avito_cursor]).to eq(cursor)
+      expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
+      expect(AvitoMessenger::Reconciler.changed_at(avito_chat(updated: (now - 10.seconds).to_i))).to be >= channel.preferences[:avito_cursor]
+    end
+
+    # Seen on the live account on 2026-10-20: no chat had changed within the backfill day.
+    it 'moves the cursor on when nothing changed, so the next poll does not scan the backfill again' do
+      channel.update!(preferences: {})
+      channel.options[:sync] = { backfill_days: 1, poll_interval: 60 }
+      channel.save!
+      stub_chats(avito_chat(updated: (now - 23.days).to_i))
+
+      expect(sync.run).to eq(chats: 0, imported: 0, unavailable: 0)
+      expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
     end
 
     # Seen on the live API on 2026-10-20: with the subscription paid, some chats still answer 402.
@@ -71,7 +83,7 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
                                                                                   body: { code: 402, message: 'Перейдите на подписку с API мессенджера' })
 
       expect(sync.run).to eq(chats: 2, imported: 1, unavailable: 1)
-      expect(channel.reload.preferences[:avito_cursor]).to eq(uncovered['updated'])
+      expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
     end
 
     context 'when a chat is not covered and the list carries its last message' do

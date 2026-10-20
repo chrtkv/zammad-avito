@@ -135,14 +135,13 @@ only the latest ~1100 of each are reachable.
 
 On 2026-10-20, with the Messenger API subscription paid:
 
-- **The subscription covers some chats, not all.** Of the two chats read, one message list answered 200,
-  the other still 402 with the "subscribe" message (the share was not measured: the run was cut short by
-  throttling; a later read of eight chats got 200 for all). Avito's documentation sells the subscription per
-  category of listings, which would explain it. The chat list answers regardless and carries each chat's
+- **The subscription covers chats by the listing's category.** On "Расширенный" one chat still answered 402
+  with the "subscribe" message; once "Максимальный" was paid, every chat read answered 200. That matches
+  Avito's documentation: goods and jobs need "Максимальный", services "Расширенный" or higher. An account on
+  a lower tariff can therefore have chats the API lists but will not open. The chat list carries each chat's
   latest message in full, so for a chat that answers 402 the poll imports that message, tags the ticket
   `avito-api-unavailable` and leaves one internal note to read the chat and reply in Avito. The tag goes
-  once the chat answers again. The poll skips such a
-  chat and counts it; a reply to it fails at once with Avito's message.
+  once the chat answers again.
 - **List parameters are comma-separated.** `chat_types=u2i,u2u` returns both kinds; repeated keys return
   `u2i` alone.
 - **The chat list is sorted by `last_message.created`, newest first.** `updated` also moves on reads and is

@@ -137,7 +137,11 @@ On 2026-10-20, with the Messenger API subscription paid:
 
 - **The subscription covers some chats, not all.** Of the two chats read, one message list answered 200,
   the other still 402 with the "subscribe" message (the share was not measured: the run was cut short by
-  throttling). Avito's documentation sells the subscription per category of listings, which would explain it. The poll skips such a
+  throttling; a later read of eight chats got 200 for all). Avito's documentation sells the subscription per
+  category of listings, which would explain it. The chat list answers regardless and carries each chat's
+  latest message in full, so for a chat that answers 402 the poll imports that message, tags the ticket
+  `avito-api-unavailable` and leaves one internal note to read the chat and reply in Avito. The tag goes
+  once the chat answers again. The poll skips such a
   chat and counts it; a reply to it fails at once with Avito's message.
 - **List parameters are comma-separated.** `chat_types=u2i,u2u` returns both kinds; repeated keys return
   `u2i` alone.

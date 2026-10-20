@@ -10,6 +10,8 @@ module AvitoChannel
 
     SENDERS = { customer: 'Customer', own: 'Agent', system: 'System' }.freeze
 
+    UNCOVERED_TAG = 'avito-api-unavailable'.freeze
+
     attr_reader :channel
 
     def initialize(channel, client: nil, transport: AvitoMessenger::Transport.new)
@@ -46,10 +48,71 @@ module AvitoChannel
       article
     end
 
+    # A chat whose messages Avito refuses (402: the subscription does not cover it, usually because of the
+    # listing's category). The chat list still carries its latest message: that one is imported as usual, and
+    # the ticket is tagged and told once, in an internal note, to read the rest and answer in Avito.
+    def import_uncovered(chat)
+      remember_chat(chat)
+      last = chat['last_message']
+      return nil if !last.is_a?(Hash) || last['id'].blank?
+
+      message = AvitoMessenger::Message.from_hash(last, account_user_id: user_id, chat_id: chat['id'].to_s)
+      article = import(message)
+      ticket  = article&.ticket || chat_ticket(chat['id'])
+      flag_uncovered(ticket, chat) if ticket
+      article
+    end
+
+    # The chat answers again (the subscription now covers it): the tag goes.
+    def clear_uncovered(chat_id)
+      ticket = chat_ticket(chat_id)
+      return if !ticket || !ticket.preferences.dig(:avito, :uncovered)
+
+      ticket.tag_remove(UNCOVERED_TAG, 1)
+      ticket.preferences[:avito][:uncovered] = false
+      ticket.save!
+    end
+
     private
 
     def user_id
       channel.options[:user_id]
+    end
+
+    def chat_ticket(chat_id)
+      ref = AvitoMessageRef.where(channel_id: channel.id, chat_id: chat_id.to_s).where.not(ticket_article_id: nil).order(:id).last
+      ref && Ticket::Article.find_by(id: ref.ticket_article_id)&.ticket
+    end
+
+    def flag_uncovered(ticket, chat)
+      return if ticket.preferences.dig(:avito, :uncovered)
+
+      Transaction.execute(reset_user_id: true, context: 'avito') do
+        UserInfo.current_user_id = 1
+        ticket.tag_add(UNCOVERED_TAG, 1)
+        ticket.preferences[:avito] ||= {}
+        ticket.preferences[:avito][:uncovered] = true
+        ticket.save!
+
+        Ticket::Article.create!(
+          ticket_id:     ticket.id,
+          type_id:       Ticket::Article::Type.lookup(name: 'note').id,
+          sender_id:     Ticket::Article::Sender.lookup(name: 'System').id,
+          internal:      true,
+          content_type:  'text/plain',
+          body:          AvitoChannel.uncovered_note(chat_item(chat)['url']),
+          preferences:   { 'avito' => { 'origin' => 'avito', 'notice' => 'uncovered' } },
+          created_by_id: 1,
+          updated_by_id: 1,
+        )
+      end
+    end
+
+    def chat_item(chat)
+      context = chat['context']
+      return {} if !context.is_a?(Hash) || context['type'] != 'item' || !context['value'].is_a?(Hash)
+
+      context['value']
     end
 
     def account_name
@@ -145,7 +208,7 @@ module AvitoChannel
     end
 
     def create_ticket(message, customer)
-      item = chat_item(message)
+      item = chat_item(chat(message))
 
       Ticket.create!(
         group_id:    channel.group_id,
@@ -168,12 +231,6 @@ module AvitoChannel
       )
     end
 
-    def chat_item(message)
-      context = chat(message)['context']
-      return {} if !context.is_a?(Hash) || context['type'] != 'item'
-
-      context['value'].is_a?(Hash) ? context['value'] : {}
-    end
 
     def ticket_title(message, item)
       title = item['title'].presence || message.render_text(AvitoChannel.labels).presence || '-'

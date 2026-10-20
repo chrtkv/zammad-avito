@@ -51,6 +51,13 @@ module AvitoChannel
     AuditLog.suspend { channel.save! }
   end
 
+  # The internal note on a ticket whose chat Avito does not give out through the API.
+  def self.uncovered_note(item_url)
+    locale = Setting.get('locale_default') || 'en-us'
+    text   = Translation.translate(locale, __("Avito does not give out this chat's messages through the API: the Messenger API subscription does not cover it, most likely because of the listing's category. Only the chat's latest message reaches this ticket; earlier ones may be missing. Read the chat and reply in Avito."))
+    [text, item_url.presence, 'https://www.avito.ru/profile/messenger'].compact.join("\n")
+  end
+
   # Texts for Avito messages that carry none, in the system's default language.
   def self.labels
     locale = Setting.get('locale_default') || 'en-us'

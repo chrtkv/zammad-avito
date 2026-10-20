@@ -74,6 +74,60 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
       expect(channel.reload.preferences[:avito_cursor]).to eq(uncovered['updated'])
     end
 
+    context 'when a chat is not covered and the list carries its last message' do
+      let(:uncovered) do
+        avito_chat(id: 'chat-2', updated: (now - 4.minutes).to_i).merge(
+          'last_message' => { 'id' => 'last-1', 'author_id' => AvitoChannelSpecHelpers::AVITO_BUYER_ID, 'created' => (now - 4.minutes).to_i,
+                              'direction' => 'in', 'type' => 'text', 'content' => { 'text' => 'Ещё продаёте?' } },
+        )
+      end
+
+      before do
+        stub_chats(avito_chat(id: 'chat-1', updated: (now - 5.minutes).to_i), uncovered)
+        stub_messages('chat-1', [list_message('m1', created: now - 5.minutes)])
+        stub_avito(:get, "/messenger/v3/accounts/#{account}/chats/chat-2/messages/", status: 402,
+                                                                                    body: { code: 402, message: 'Перейдите на подписку с API мессенджера' })
+      end
+
+      it 'imports that message and flags the ticket once' do
+        expect(sync.run).to eq(chats: 2, imported: 2, unavailable: 1)
+
+        article = Ticket::Article.find_by(message_id: "avito.#{account}.chat-2.last-1")
+        ticket  = article.ticket
+        expect(article.body).to eq('Ещё продаёте?')
+        expect(ticket.tag_list).to include('avito-api-unavailable')
+        notes = ticket.articles.select { |a| a.preferences.dig('avito', 'notice') == 'uncovered' }
+        expect(notes.size).to eq(1)
+        expect(notes.first).to have_attributes(internal: true)
+        expect(notes.first.body).to include('Read the chat and reply in Avito', 'https://www.avito.ru/item/1')
+
+        channel.update!(preferences: channel.reload.preferences.merge(avito_cursor: (now - 10.minutes).to_i))
+        described_class.new(channel, now: now).run
+        expect(ticket.reload.articles.count { |a| a.preferences.dig('avito', 'notice') == 'uncovered' }).to eq(1)
+      end
+
+      it 'drops the flag once the chat answers again' do
+        sync.run
+        ticket = Ticket::Article.find_by(message_id: "avito.#{account}.chat-2.last-1").ticket
+
+        stub_messages('chat-2', [list_message('last-1', created: now - 4.minutes)])
+        channel.update!(preferences: channel.reload.preferences.merge(avito_cursor: (now - 10.minutes).to_i))
+        described_class.new(channel, now: now).run
+
+        expect(ticket.reload.tag_list).not_to include('avito-api-unavailable')
+        expect(ticket.preferences.dig(:avito, :uncovered)).to be(false)
+      end
+
+      it 'writes the note in the system language' do
+        AvitoChannel::Setup.ensure!
+        Setting.set('locale_default', 'ru')
+        sync.run
+
+        note = Ticket::Article.where(internal: true).detect { |a| a.preferences.dig('avito', 'notice') == 'uncovered' }
+        expect(note.body).to start_with('Авито не отдаёт сообщения этого чата через API')
+      end
+    end
+
     it 'fails when no chat is covered, so the channel shows the missing subscription' do
       stub_chats(avito_chat(updated: (now - 5.minutes).to_i))
       stub_avito(:get, "/messenger/v3/accounts/#{account}/chats/chat-1/messages/", status: 402,

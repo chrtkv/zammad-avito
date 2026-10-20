@@ -22,8 +22,9 @@ module AvitoChannel
     # { chats:, imported:, unavailable: }
     #
     # The subscription can cover some chats and not others (Avito sells it per category of listings): such a
-    # chat answers 402 and is skipped, so it does not hold up the rest. When every chat answers 402, the
-    # subscription is missing altogether and the error is raised, for the channel to show it.
+    # chat answers 402. It does not hold up the rest; its latest message, which the chat list carries, is
+    # imported and the ticket flagged (Importer#import_uncovered). When every chat answers 402, the error is
+    # raised as well, for the channel to show it.
     def run
       cursor = channel.preferences[:avito_cursor]
       since  = cursor ? Time.zone.at(cursor) - CLOCK_SLACK : backfill_since
@@ -39,8 +40,10 @@ module AvitoChannel
       chats.each do |chat|
         begin
           imported += sync_chat(chat, since)
+          @importer.clear_uncovered(chat['id'])
         rescue AvitoMessenger::Error::SubscriptionRequired => e
           unavailable << e
+          imported += 1 if @importer.import_uncovered(chat)
         end
         save_cursor(AvitoMessenger::Reconciler.changed_at(chat))
       end

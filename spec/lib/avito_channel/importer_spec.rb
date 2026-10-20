@@ -127,6 +127,12 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
       expect(first.ticket.reload.state.name).to eq('closed')
     end
 
+    it 'reads the chat type off the chat id when the message does not name it' do
+      stub_avito_chat(avito_chat(id: 'u2i-abc'))
+      message = avito_message(id: 'm7', chat_id: 'u2i-abc').except('chat_type')
+      expect(import(message).ticket.preferences.dig(:avito, :chat_type)).to eq('u2i')
+    end
+
     it 'starts a ticket when the manager wrote first' do
       other_chat = avito_chat(id: 'chat-2', buyer_id: 555, buyer_name: 'Пётр')
       stub_avito_chat(other_chat)

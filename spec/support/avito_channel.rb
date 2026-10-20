@@ -82,8 +82,12 @@ end
 RSpec.configure do |config|
   config.include AvitoChannelSpecHelpers
 
-  # Avatars of Avito users: a tiny PNG for any of them, unless a spec says otherwise.
+  # Avatars of Avito users: a tiny PNG for any of them, unless a spec says otherwise. Zammad resolves an
+  # avatar's host before fetching it (HostnameSafetyCheck); a fixed public address keeps that off real DNS,
+  # whose hiccups made avatar specs flaky.
   config.before do
+    allow(IPSocket).to receive(:getaddress).and_call_original
+    allow(IPSocket).to receive(:getaddress).with('www.avito.ru').and_return('185.89.12.1')
     stub_request(:get, %r{\Ahttps://www\.avito\.ru/test-avatar/})
       .to_return(status: 200, body: AvitoChannelSpecHelpers::PNG, headers: { 'Content-Type' => 'image/png' })
   end

@@ -41,6 +41,7 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
       expect(sync.run).to eq(chats: 1, imported: 2, unavailable: 0)
 
       articles = Ticket::Article.where(message_id: ["avito.#{account}.chat-1.m1", "avito.#{account}.chat-1.m2"]).order(:created_at)
+      expect(articles.first.ticket.preferences.dig(:avito, :chat_type)).to be_nil # 'chat-1' carries no type
       expect(articles.map { |a| [a.body, a.sender.name] }).to eq([%w[Вопрос Customer], ['Ответ из Авито', 'Agent']])
       expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
       expect(a_request(:get, %r{/chats/old/messages})).not_to have_been_made

@@ -154,12 +154,16 @@ On 2026-10-20, with the Messenger API subscription paid:
   `api.avito.ru` from that address took over 20 s for a while (another address was unaffected). The poll
   reads only chats with new messages, so it stays far below that.
 
+- **A sent message keeps its id.** The id `send` returns is the id the message list reports for it: after
+  replies from a local Zammad on 2026-10-20 the poll read the chat and imported nothing twice. Messages a
+  manager wrote in Avito's interface came in through the poll as replies of the account's service user.
+
 ## Still to verify against the live API
 
 These need the channel running on a public address, with the webhook subscribed:
 
 1. Does the webhook deliver own messages (`author_id == user_id`)?
-2. Is the id returned by `send` the same id the webhook and the message list report?
+2. Is the id returned by `send` the same id the webhook reports? (The message list: yes, see above.)
 3. Are buyer ids stable across two of our accounts?
 4. The webhook sender's user agent and source addresses (for firewalls and fail2ban rules on the way in).
 5. Do the chats the subscription does not cover reach the webhook at all?

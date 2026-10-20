@@ -83,7 +83,7 @@ module AvitoChannel
     # each would find no ticket and open one. Held until the transaction ends.
     def lock_chat(chat_id)
       key = Zlib.crc32("avito-chat:#{channel.id}:#{chat_id}")
-      ActiveRecord::Base.connection.select_value("SELECT pg_advisory_xact_lock(#{key.to_i})")
+      ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{key.to_i})")
     end
 
     def chat_ticket(chat_id)

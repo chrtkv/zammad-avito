@@ -1,0 +1,35 @@
+<div class="sidebar-block">
+  <% if @avito.item_title || @avito.item_url: %>
+    <label><%- @T('Listing') %></label>
+    <% if @avito.item_url: %>
+      <a href="<%= @avito.item_url %>" target="_blank" rel="noopener noreferrer"><%= @avito.item_title || @avito.item_url %></a>
+    <% else: %>
+      <%= @avito.item_title %>
+    <% end %>
+  <% else: %>
+    <label><%- @T('Chat') %></label>
+    <%- @T('Without a listing (chat with the profile)') %>
+  <% end %>
+</div>
+
+<% if @avito.item_price: %>
+<div class="sidebar-block">
+  <label><%- @T('Price') %></label>
+  <%= @avito.item_price %>
+</div>
+<% end %>
+
+<div class="sidebar-block">
+  <label><%- @T('Shop') %></label>
+  <%= @avito.account_name || @avito.user_id %>
+</div>
+
+<div class="sidebar-block">
+  <a href="<%= @chatUrl %>" target="_blank" rel="noopener noreferrer"><%- @T('Open the chat in Avito') %></a>
+</div>
+
+<% if @avito.uncovered: %>
+<div class="sidebar-block">
+  <div class="alert alert--warning" role="alert"><%- @T('Avito does not give out this chat through the API. Read and reply in Avito.') %></div>
+</div>
+<% end %>

@@ -231,7 +231,8 @@ module AvitoChannel
         preferences: {
           channel_id: channel.id,
           avito:      {
-            user_id:    user_id,
+            user_id:      user_id,
+            account_name: account_name,
             chat_id:    message.chat_id,
             # The webhook names the chat type; the message list does not, but chat ids carry it: u2i-…, u2u-….
             chat_type:  message.chat_type || message.chat_id.to_s[/\A(u2i|u2u|a2u)-/, 1],

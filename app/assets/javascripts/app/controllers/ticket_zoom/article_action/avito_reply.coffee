@@ -36,10 +36,18 @@ class AvitoReply
 
     true
 
+  @fromAvito: (ticket) ->
+    return false if !ticket || !ticket.create_article_type_id
+    App.TicketArticleType.find(ticket.create_article_type_id)?.name is AvitoReply.TYPE
+
   @articleTypes: (articleTypes, ticket, ui) ->
     return articleTypes if !ticket || ticket.currentView() is 'customer'
-    return articleTypes if !ticket.create_article_type_id
-    return articleTypes if App.TicketArticleType.find(ticket.create_article_type_id)?.name isnt AvitoReply.TYPE
+    return articleTypes if !AvitoReply.fromAvito(ticket)
+
+    # The reply form asks for its types while it is being built, before it picks the default one (ui.type is
+    # unset then): a ticket from Avito starts on an Avito reply instead of an internal note. A type the agent
+    # left in a draft is kept. The form asks again before every type switch; those calls leave it alone.
+    ui.defaults.type ||= AvitoReply.TYPE if ui?.defaults && !ui.type
 
     # Avito takes plain text; a longer reply is sent as several messages of 1000 characters.
     articleTypes.push {
@@ -54,6 +62,14 @@ class AvitoReply
     articleTypes
 
   @setArticleTypePost: (type, ticket, ui) ->
+    # After a reply is sent the form resets to a note with empty defaults; go back to an Avito reply. An agent
+    # choosing a note keeps it: the defaults are not empty then.
+    if type is 'note' && ui?.defaults && _.isEmpty(ui.defaults) && ticket?.currentView() isnt 'customer' && AvitoReply.fromAvito(ticket)
+      ui.defaults.type = AvitoReply.TYPE
+      ui.setArticleTypePre(AvitoReply.TYPE)
+      ui.setArticleTypePost(AvitoReply.TYPE)
+      return
+
     return if type isnt AvitoReply.TYPE
 
     rawHTML   = ui.$('[data-name=body]').html()

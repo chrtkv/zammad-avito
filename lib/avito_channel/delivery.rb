@@ -149,9 +149,10 @@ module AvitoChannel
       raise Undeliverable, e.message
     end
 
-    # An image's upload is saved while it is being sent, and dropped again when Avito answers the send with an
-    # error: an image that still has an image_id may have reached the chat with its answer lost, one without
-    # has not (see #unconfirmed_image!).
+    # An image's upload is saved while it is being sent, and dropped again when Avito refuses the send (4xx):
+    # an image that still has an image_id may have reached the chat with its answer lost, one without has not
+    # (see #unconfirmed_image!). A 5xx keeps it: a failing gateway says nothing about whether Avito took the
+    # message, and a retry before it shows in the chat sent the picture twice (review, 2026-10-21).
     def send_piece!(index)
       piece = pieces[index]
       return @client.send_text(@user_id, @chat_id, piece['text']).id if piece['kind'] == 'text'
@@ -161,8 +162,8 @@ module AvitoChannel
       update_piece(index, 'image_id' => image.id, 'image_urls' => image.urls)
       begin
         @client.send_image(@user_id, @chat_id, image.id).id
-      rescue AvitoMessenger::Error::Api
-        update_piece(index, 'image_id' => nil)
+      rescue AvitoMessenger::Error::Api => e
+        update_piece(index, 'image_id' => nil) if e.status < 500
         raise
       end
     end

@@ -68,6 +68,11 @@ class ChannelAvito extends App.ControllerSubContent
   runningHistory: =>
     _.filter(_.keys(@history || {}), (id) => @history[id] && !@history[id].finished_at)
 
+  # A failed request (a 503, a dropped connection) asks again on the next round: the load is still running as
+  # far as the page knows. Without the error handler one failure stopped the updates for good (review,
+  # 2026-10-21). App.Ajax keeps its own `complete`, so this cannot go there; failResponseNoTrigger spares the
+  # agent an error dialog every ten seconds. An aborted request is the page being left (the controller's
+  # requests are cut off on release): no new round then.
   refreshHistory: =>
     for id in @runningHistory()
       do (id) =>
@@ -76,10 +81,13 @@ class ChannelAvito extends App.ControllerSubContent
           type: 'GET'
           url:  "#{@apiPath}/channels_avito/#{id}/history"
           processData: true
+          failResponseNoTrigger: true
           success: (state) =>
             @history[id] = state
             @$(".action[data-id='#{id}'] .js-historyStatus").html(App.view('avito/history_status')(history: state))
             @pollHistory()
+          error: (xhr, status) =>
+            @pollHistory() if status isnt 'abort'
         )
 
   channelId: (e) ->

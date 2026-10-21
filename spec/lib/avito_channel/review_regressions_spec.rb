@@ -179,19 +179,37 @@ RSpec.describe 'Avito review regression scenarios', :aggregate_failures do
     end
   end
 
-  it 'sends an image again when Avito answered its send with an error' do
-    article = agent_reply(ingest('first').ticket)
-    create(:store, object: 'Ticket::Article', o_id: article.id, data: 'PNG', filename: 'photo.png',
-                   preferences: { 'Content-Type' => 'image/png' })
-    client = instance_double(AvitoMessenger::Client, mark_read: nil, messages: [],
-                                                     send_text: AvitoMessenger::Message.from_hash(avito_message(id: 'text-ok', author_id: account)),
-                                                     upload_image: AvitoMessenger::Client::UploadedImage.new(id: 'upload-1', urls: []))
-    allow(client).to receive(:send_image).and_raise(AvitoMessenger::Error::Api.new('HTTP 500', status: 500))
-    expect { AvitoChannel::Delivery.new(article, client: client).deliver! }.to raise_error(AvitoMessenger::Error::Api)
+  context 'with an image whose send Avito answered with an error' do
+    let(:article) { agent_reply(ingest('first').ticket) }
+    let(:client) do
+      instance_double(AvitoMessenger::Client, mark_read: nil, messages: [],
+                                              send_text:    AvitoMessenger::Message.from_hash(avito_message(id: 'text-ok', author_id: account)),
+                                              upload_image: AvitoMessenger::Client::UploadedImage.new(id: 'upload-1', urls: ['https://img.example/u1.jpg']))
+    end
 
-    allow(client).to receive(:send_image).and_return(AvitoMessenger::Message.from_hash(avito_message(id: 'img-ok', author_id: account, type: 'image')))
-    AvitoChannel::Delivery.new(article.reload, client: client).deliver!
-    expect(article.reload.preferences.dig('avito', 'pieces', 1, 'message_id')).to eq('img-ok')
+    def fail_send(status)
+      create(:store, object: 'Ticket::Article', o_id: article.id, data: 'PNG', filename: 'photo.png',
+                     preferences: { 'Content-Type' => 'image/png' })
+      allow(client).to receive(:send_image).and_raise(AvitoMessenger::Error::Api.new("HTTP #{status}", status: status))
+      expect { AvitoChannel::Delivery.new(article, client: client).deliver! }.to raise_error(AvitoMessenger::Error::Api)
+      allow(client).to receive(:send_image).and_return(AvitoMessenger::Message.from_hash(avito_message(id: 'img-ok', author_id: account, type: 'image')))
+    end
+
+    it 'sends it again after a refusal (4xx): nothing went out' do
+      fail_send(400)
+
+      AvitoChannel::Delivery.new(article.reload, client: client).deliver!
+      expect(article.reload.preferences.dig('avito', 'pieces', 1, 'message_id')).to eq('img-ok')
+    end
+
+    # Review, 2026-10-21: after a 502 the image was sent a second time.
+    it 'does not send it again after a gateway error (5xx), and asks the agent to look' do
+      fail_send(502)
+
+      expect { AvitoChannel::Delivery.new(article.reload, client: client).deliver! }
+        .to raise_error(AvitoChannel::Delivery::Undeliverable, include('photo.png'))
+      expect(client).to have_received(:send_image).once
+    end
   end
 
   describe 'tickets merged across chats' do

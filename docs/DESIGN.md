@@ -173,7 +173,7 @@ The admin page can also act on an account outside the schedule:
 - A piece marked attempted but without an Avito id is first looked for among the chat's latest messages
   written at or after the attempt before it is sent again: a text by its text, an image by an address of the
   image Zammad uploaded for it (an image's upload is saved before `messages/image`, and dropped when Avito
-  answers that with an error). An image that may have gone out (its send got no answer) and is not found
+  refuses that with a 4xx; a 5xx keeps it, since a failing gateway does not say the message was not taken). An image that may have gone out (its send got no answer) and is not found
   stops the delivery with a request to look in Avito: sending it again could show it twice, and taking any
   own image for it confirmed a manager's picture as the reply.
 - The message record, its article and the link between them are written in one transaction, so an import

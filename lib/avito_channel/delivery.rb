@@ -22,7 +22,8 @@ module AvitoChannel
       @chat_id = @ticket.preferences.dig(:avito, :chat_id)
       raise Undeliverable, "ticket #{@ticket.id} has no Avito chat" if @chat_id.blank?
 
-      @client = client || AvitoChannel.client(@channel, transport:)
+      @transport = transport
+      @client    = client || AvitoChannel.client(@channel, transport:)
     end
 
     def deliver!
@@ -44,6 +45,8 @@ module AvitoChannel
 
       mark_read
       article
+    ensure
+      @transport.finish
     end
 
     private
@@ -111,11 +114,13 @@ module AvitoChannel
       AvitoMessageRef.claim!(@channel, @chat_id, avito_message_id, article)
     end
 
-    # An image cannot be recognised by its text, so only text pieces are looked for.
+    # A piece attempted before without an id may have gone out with its answer lost. Look for it among the
+    # chat's latest messages, written at or after the attempt: a text by its text, an image as any own image
+    # Zammad does not know yet (Avito returns no checksum to compare; a manager sending a picture in Avito in
+    # the same minutes is the one case that would be mistaken for ours).
     def sent_already(piece)
-      return nil if piece['kind'] != 'text'
-
-      candidate = [{ article_id: article.id, chat_id: @chat_id, text: piece['text'], sent_at: Time.zone.at(piece['attempted_at']) }]
+      candidate = [{ article_id: article.id, chat_id: @chat_id, kind: piece['kind'], text: piece['text'],
+                     sent_at: Time.zone.at(piece['attempted_at']) }]
       @client.messages(@user_id, @chat_id, limit: RECOVERY_WINDOW)
         .reject { |message| AvitoMessageRef.known?(@channel, message.id) }
         .find { |message| AvitoMessenger::Echo.match(message, candidate) }

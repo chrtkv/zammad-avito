@@ -4,7 +4,8 @@ module AvitoChannel
   #
   #   AvitoChannel::Importer.new(channel).import(message) # => article, or nil when already known
   class Importer
-    CLOSED_STATES = %w[closed merged removed].freeze
+    # State types, not names: an admin's own closing state ("Resolved", say) is still of type closed.
+    CLOSED_STATE_TYPES = %w[closed merged removed].freeze
     TITLE_LENGTH  = 60
     ECHO_LOOKBACK = 30.minutes
 
@@ -28,24 +29,11 @@ module AvitoChannel
 
     def import(message)
       return nil if AvitoMessageRef.known?(channel, message.id)
-
       if message.own? && (echo = echoed_article(message))
-        return nil if !AvitoMessageRef.claim!(channel, message.chat_id, message.id, echo)
-
-        record_echo(echo, message)
-        return echo
+        return link_echo(echo, message)
       end
 
-      return nil if !AvitoMessageRef.claim!(channel, message.chat_id, message.id)
-
-      begin
-        article = create(message)
-      rescue
-        AvitoMessageRef.release!(channel, message.id)
-        raise
-      end
-      AvitoMessageRef.attach!(channel, message.id, article)
-      article
+      create(message)
     end
 
     # A chat whose messages Avito refuses (402: the subscription does not cover it, usually because of the
@@ -126,17 +114,33 @@ module AvitoChannel
       channel.options[:name].presence || "Avito #{user_id}"
     end
 
+    # The message is recorded in the same transaction that creates its article: an import cut short (a crash,
+    # a killed worker) leaves neither behind, and the next delivery imports it. Two imports of one message at
+    # once meet at the unique index; the second finds it recorded and creates nothing.
     def create(message)
       article = nil
       Transaction.execute(reset_user_id: true, context: 'avito') do
         lock_chat(message.chat_id)
+        next if !AvitoMessageRef.claim!(channel, message.chat_id, message.id)
+
         UserInfo.current_user_id = 1
         customer = customer_for(message)
         ticket   = ticket_for(message, customer)
         article  = create_article(message, ticket, customer)
         add_attachments(article, message)
+        AvitoMessageRef.attach!(channel, message.id, article)
       end
       article
+    end
+
+    def link_echo(echo, message)
+      ActiveRecord::Base.transaction do
+        lock_chat(message.chat_id)
+        next nil if !AvitoMessageRef.claim!(channel, message.chat_id, message.id, echo)
+
+        record_echo(echo, message)
+        echo
+      end
     end
 
     # -- customer -------------------------------------------------------------------------------------------
@@ -194,7 +198,7 @@ module AvitoChannel
     # the chat has no ticket at all (a manager wrote first, in Avito).
     def ticket_for(message, customer)
       tickets = chat_tickets(message, customer)
-      open    = tickets.find { |ticket| CLOSED_STATES.exclude?(ticket.state.name) }
+      open    = tickets.find { |ticket| CLOSED_STATE_TYPES.exclude?(ticket.state.state_type.name) }
 
       if message.origin == :customer
         return follow_up(open) if open
@@ -205,10 +209,12 @@ module AvitoChannel
       open || tickets.first || create_ticket(message, customer)
     end
 
-    def chat_tickets(message, customer)
-      Ticket.where(customer_id: customer.id).reorder(updated_at: :desc).select do |ticket|
-        ticket.preferences[:channel_id] == channel.id && ticket.preferences.dig(:avito, :chat_id).to_s == message.chat_id
-      end
+    # The chat's tickets, newest first, found through its recorded messages: an agent may have corrected the
+    # customer, or merged the ticket into another, and the chat must still land there.
+    def chat_tickets(message, _customer)
+      article_ids = AvitoMessageRef.where(channel_id: channel.id, chat_id: message.chat_id.to_s)
+                                   .where.not(ticket_article_id: nil).select(:ticket_article_id)
+      Ticket.where(id: Ticket::Article.where(id: article_ids).select(:ticket_id)).reorder(updated_at: :desc).to_a
     end
 
     def follow_up(ticket)
@@ -341,9 +347,7 @@ module AvitoChannel
     # A reply Zammad sent whose Avito id never reached the article (see AvitoMessenger::Echo).
     def echoed_article(message)
       pieces = recent_replies(message.chat_id).flat_map do |article|
-        unconfirmed_pieces(article).map do |piece|
-          { article_id: article.id, chat_id: message.chat_id, text: piece['text'], sent_at: Time.zone.at(piece['attempted_at']) }
-        end
+        unconfirmed_pieces(article).map { |piece| echo_candidate(article, message.chat_id, piece) }
       end
       article_id = AvitoMessenger::Echo.match(message, pieces)
       article_id && Ticket::Article.find_by(id: article_id)
@@ -361,13 +365,17 @@ module AvitoChannel
 
     def unconfirmed_pieces(article)
       Array(article.preferences.dig('avito', 'pieces')).select do |piece|
-        piece['kind'] == 'text' && piece['attempted_at'] && piece['message_id'].blank?
+        piece['attempted_at'] && piece['message_id'].blank?
       end
+    end
+
+    def echo_candidate(article, chat_id, piece)
+      { article_id: article.id, chat_id: chat_id, kind: piece['kind'], text: piece['text'], sent_at: Time.zone.at(piece['attempted_at']) }
     end
 
     def record_echo(article, message)
       piece = unconfirmed_pieces(article).find do |candidate|
-        AvitoMessenger::Echo.normalize(candidate['text']) == AvitoMessenger::Echo.normalize(message.text)
+        AvitoMessenger::Echo.match(message, [echo_candidate(article, message.chat_id, candidate)])
       end
       return if !piece
 

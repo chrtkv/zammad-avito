@@ -82,9 +82,12 @@ Two paths, both idempotent by Avito message id:
    checks the token and the account and enqueues a job; parsing and ticket work happen in the job. Avito
    checks the URL by POSTing `{}`; that probe gets a plain 200.
 2. **Reconciliation poll** via `Channel::Driver::Avito#fetch`, every few minutes per account: list chats,
-   take those with `updated` newer than the stored cursor, read their recent messages and import whatever
-   is missing. This covers lost webhooks, downtime, and own messages, and does the initial backfill when an
-   account is connected.
+   take those whose last message is newer than the stored cursor, read each of them back to the cursor
+   (less a few minutes of clock slack) and import whatever is missing. A message already imported is no
+   reason to stop reading: the webhook may have brought the newest one and missed older ones. Only own
+   messages younger than a minute wait for the next poll (so the echo of a reply Zammad is sending is
+   recognised), and the cursor stops short of them. This covers lost webhooks, downtime and own messages,
+   and does the initial backfill when an account is connected.
 
 API limits shape the poll: `limit` is at most 100 and `offset` at most 1000 for both chats and messages, so
 only the latest ~1100 of each are reachable.
@@ -104,6 +107,9 @@ only the latest ~1100 of each are reachable.
 
 ## Ticket mapping
 
+- A chat's tickets are found through its recorded messages, not through the customer, so a corrected
+  customer or a merge keeps the chat on its ticket. "Closed" is a state of type closed, merged or removed,
+  whatever its name.
 - One ticket per Avito chat per account: `ticket.preferences = { channel_id, avito: { user_id, chat_id,
   chat_type, item_id, item_url, item_title } }`. A closed ticket gets a new one on the next customer message,
   as with Telegram.
@@ -121,7 +127,15 @@ only the latest ~1100 of each are reachable.
   boundaries, and sent as consecutive messages.
 - Images: `uploadImages` then `messages/image`. Avito accepts no other files; an article with non-image
   attachments fails delivery with a clear message rather than dropping them silently.
-- Delivery status, retries and the "unable to send" note follow Zammad's Telegram job.
+- Delivery status, retries and the "unable to send" note follow Zammad's Telegram job. A 429 retries after
+  the delay Avito names; a 402 (the chat is not covered) fails at once.
+- A piece marked attempted but without an Avito id is first looked for among the chat's latest messages
+  written at or after the attempt (text by its text, an image as any own image Zammad does not know) before
+  it is sent again.
+- The message record, its article and the link between them are written in one transaction, so an import
+  cut short leaves nothing behind that would block the next one.
+- An account's keys cannot be swapped for another account's: tickets, records and the webhook belong to it.
+  Changing the webhook address unsubscribes the old one and subscribes the new one.
 
 ## Tokens and errors
 

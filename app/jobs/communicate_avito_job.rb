@@ -18,6 +18,14 @@ class CommunicateAvitoJob < ApplicationJob
       # Retrying cannot help: report it at once.
       fail!(article, e.message, final: true)
       return
+    rescue AvitoMessenger::Error::RateLimited => e
+      final = article.preferences['delivery_retry'] >= MAX_RETRIES
+      fail!(article, e.message, final:)
+      raise if final
+
+      # retry_on's wait knows only the attempt number; Avito says how long to wait.
+      retry_job(wait: e.retry_after.seconds)
+      return
     rescue => e
       fail!(article, e.message, final: article.preferences['delivery_retry'] >= MAX_RETRIES)
       raise

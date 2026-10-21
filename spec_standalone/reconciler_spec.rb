@@ -52,16 +52,22 @@ RSpec.describe AvitoMessenger::Reconciler do
   describe '.more_messages?' do
     let(:page) { Array.new(100) { |i| message("m#{i}", 1000 - i) } }
 
-    it 'reads on through a page of new messages' do
-      expect(described_class.more_messages?(page, known_ids: [], offset: 0)).to be(true)
+    it 'reads on through a page that does not reach back to the boundary' do
+      expect(described_class.more_messages?(page, offset: 0, since: Time.at(900).utc)).to be(true)
     end
 
-    it 'stops at a message already imported' do
-      expect(described_class.more_messages?(page, known_ids: ['m50'], offset: 0)).to be(false)
+    # The webhook may have brought the newest message and missed older ones: a known message is no boundary.
+    it 'reads on past a message already imported' do
+      expect(described_class.more_messages?(page, offset: 0, since: Time.at(500).utc)).to be(true)
     end
 
-    it 'stops past the backfill horizon' do
-      expect(described_class.more_messages?(page, known_ids: [], offset: 0, since: Time.at(950).utc)).to be(false)
+    it 'stops once a page reaches back past the boundary' do
+      expect(described_class.more_messages?(page, offset: 0, since: Time.at(950).utc)).to be(false)
+    end
+
+    it 'stops at a short page and at the offset cap' do
+      expect(described_class.more_messages?(page.first(99), offset: 0, since: nil)).to be(false)
+      expect(described_class.more_messages?(page, offset: 1000, since: nil)).to be(false)
     end
   end
 end

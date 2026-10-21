@@ -26,6 +26,24 @@ RSpec.describe AvitoMessenger::Echo do
     expect(described_class.match(message(author_id: account, text: 'Да, в наличии.', chat_id: 'c2'), sent)).to be_nil
   end
 
+  # Review, 2026-10-21: the same text a manager wrote in Avito before the attempt passed for the reply.
+  it 'never takes a message written before the attempt for its echo' do
+    early = message(author_id: account, text: 'Да, в наличии.', created: sent_at - 300)
+    expect(described_class.match(early, sent)).to be_nil
+    slightly_behind = message(author_id: account, text: 'Да, в наличии.', created: sent_at - 20)
+    expect(described_class.match(slightly_behind, sent)).to eq(42)
+  end
+
+  it 'matches an image piece with an own image written after the attempt' do
+    image = AvitoMessenger::Message.from_hash(
+      { 'id' => 'img', 'author_id' => account, 'type' => 'image', 'content' => {}, 'created' => (sent_at + 5).to_i },
+      account_user_id: account, chat_id: 'c1',
+    )
+    pieces = [{ article_id: 7, chat_id: 'c1', kind: 'image', sent_at: }]
+    expect(described_class.match(image, pieces)).to eq(7)
+    expect(described_class.match(image, sent)).to be_nil
+  end
+
   it 'ignores replies outside the window' do
     late = message(author_id: account, text: 'Да, в наличии.', created: sent_at + 3600)
     expect(described_class.match(late, sent)).to be_nil

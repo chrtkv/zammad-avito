@@ -55,12 +55,22 @@ RSpec.describe AvitoChannel::Sync, :aggregate_failures do
       expect(sync.run).to eq(chats: 1, imported: 0, unavailable: 0)
     end
 
-    it 'leaves chats changed in the last minute for the next run' do
+    # A chat is never put off whole: that let the cursor pass its older missed messages (review, 2026-10-21).
+    it 'reads a chat changed in the last minute now, holding back only own messages that young' do
       stub_chats(avito_chat(updated: (now - 10.seconds).to_i))
+      stub_messages('chat-1', [
+                      list_message('own-new', created: now - 10.seconds, author_id: account, text: 'Только что'),
+                      list_message('customer-new', created: now - 20.seconds, text: 'Вопрос'),
+                    ])
 
-      expect(sync.run).to eq(chats: 0, imported: 0, unavailable: 0)
-      expect(channel.reload.preferences[:avito_cursor]).to eq((now - 60).to_i)
-      expect(AvitoMessenger::Reconciler.changed_at(avito_chat(updated: (now - 10.seconds).to_i))).to be >= channel.preferences[:avito_cursor]
+      expect(sync.run).to eq(chats: 1, imported: 1, unavailable: 0)
+      expect(AvitoMessageRef.known?(channel, 'customer-new')).to be(true)
+      expect(AvitoMessageRef.known?(channel, 'own-new')).to be(false)
+      expect(channel.reload.preferences[:avito_cursor]).to be < (now - 10.seconds).to_i
+
+      later = described_class.new(channel, now: now + 2.minutes)
+      expect(later.run).to include(imported: 1)
+      expect(AvitoMessageRef.known?(channel, 'own-new')).to be(true)
     end
 
     # Seen on the live account on 2026-10-20: no chat had changed within the backfill day.

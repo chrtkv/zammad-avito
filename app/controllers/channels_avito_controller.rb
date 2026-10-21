@@ -24,7 +24,8 @@ class ChannelsAvitoController < ApplicationController
 
   def update
     channel = save_account(find_channel)
-    render json: masked(channel)
+    AvitoChannel::Account.resubscribe_if_moved!(channel)
+    render json: masked(channel.reload)
   end
 
   def subscribe

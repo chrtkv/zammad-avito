@@ -131,6 +131,22 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
         stub_avito(:get, '/core/v1/accounts/self', body: { id: AvitoChannelSpecHelpers::AVITO_USER_ID, name: 'Renamed' })
       end
 
+      it 'moves the webhook when its address changes: unsubscribes the old one, subscribes the new one' do
+        old_url = AvitoChannel::Account.webhook_url(channel)
+        channel.options[:webhook] = { 'url' => old_url, 'subscribed_at' => 1.day.ago.iso8601, 'error' => nil }
+        channel.save!
+        stub_avito(:post, '/messenger/v1/webhook/unsubscribe', body: { ok: true })
+        stub_avito(:post, '/messenger/v3/webhook', body: { ok: true })
+
+        put "/api/v1/channels_avito/#{channel.id}", params: { webhook_base_url: 'https://new.example' }, as: :json
+
+        new_url = "https://new.example/api/v1/channels_avito_webhook/#{channel.options[:callback_token]}"
+        expect(response).to have_http_status(:ok)
+        expect(a_request(:post, 'https://api.avito.ru/messenger/v1/webhook/unsubscribe').with(body: { url: old_url }.to_json)).to have_been_made
+        expect(a_request(:post, 'https://api.avito.ru/messenger/v3/webhook').with(body: { url: new_url }.to_json)).to have_been_made
+        expect(channel.reload.options[:webhook]).to include('url' => new_url, 'error' => nil)
+      end
+
       it 'keeps the stored secret when the form sends back the mask' do
         put "/api/v1/channels_avito/#{channel.id}",
             params: { client_secret: SensitiveParamsHelper::SENSITIVE_MASK, backfill_days: 3 }, as: :json

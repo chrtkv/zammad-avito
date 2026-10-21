@@ -43,6 +43,8 @@ module AvitoChannel
         'Please choose a group.'                                                 => 'Выберите группу.',
         'Avito did not return the account id.'                                   => 'Авито не вернул id аккаунта.',
         'This Avito account is already connected.'                               => 'Этот аккаунт Авито уже подключён.',
+        'These keys belong to another Avito account. Connect it as a new account.' =>
+                                                                                    'Эти ключи от другого аккаунта Авито. Подключите его как новый аккаунт.',
         'Listing'                                                                => 'Объявление',
         'Shop'                                                                   => 'Магазин',
         'Without a listing (chat with the profile)'                              => 'Без объявления (чат по профилю)',

@@ -14,12 +14,18 @@ module AvitoChannel
 
     def initialize(channel, client: nil, transport: AvitoMessenger::Transport.new, now: Time.zone.now)
       @channel  = channel
-      @client   = client || AvitoChannel.client(channel, transport:)
-      @importer = Importer.new(channel, client: @client, transport:)
-      @now      = now
+      @transport = transport
+      @client    = client || AvitoChannel.client(channel, transport:)
+      @importer  = Importer.new(channel, client: @client, transport:)
+      @now       = now
     end
 
     # { chats:, imported:, unavailable: }
+    #
+    # Every chat changed since the cursor is read in full back to the cursor (less CLOCK_SLACK). Only own
+    # messages younger than AvitoChannel::OWN_MESSAGE_DELAY wait for the next run, so the echo of a reply Zammad
+    # is sending is recognised; the cursor stops short of the oldest of them, so they and the chat are read
+    # again.
     #
     # The subscription can cover some chats and not others (Avito sells it per category of listings): such a
     # chat answers 402. It does not hold up the rest; its latest message, which the chat list carries, is
@@ -37,6 +43,7 @@ module AvitoChannel
       chats       = changed_chats(cursor || since.to_i)
       imported    = 0
       unavailable = []
+      @floor      = horizon.to_i
       chats.each do |chat|
         begin
           imported += sync_chat(chat, since)
@@ -45,14 +52,16 @@ module AvitoChannel
           unavailable << e
           imported += 1 if @importer.import_uncovered(chat)
         end
-        save_cursor(AvitoMessenger::Reconciler.changed_at(chat))
+        save_cursor([AvitoMessenger::Reconciler.changed_at(chat), @floor].min)
       end
       raise unavailable.first if unavailable.any? && unavailable.size == chats.size
 
-      # Every chat changed up to the horizon has been seen: the next run starts there, not at the backfill.
-      save_cursor(horizon.to_i)
+      # Every chat changed up to now has been read: the next run starts here, short of any deferred message.
+      save_cursor(@floor)
 
       { chats: chats.size, imported: imported, unavailable: unavailable.size }
+    ensure
+      @transport.finish
     end
 
     private
@@ -61,8 +70,7 @@ module AvitoChannel
       channel.options[:user_id]
     end
 
-    # Own messages are imported a minute late (see AvitoChannel::OWN_MESSAGE_DELAY); chats changed inside that
-    # minute wait for the next run, and the cursor does not pass them.
+    # Own messages newer than this wait for the next run (see AvitoChannel::OWN_MESSAGE_DELAY).
     def horizon
       @now - AvitoChannel::OWN_MESSAGE_DELAY.seconds
     end
@@ -83,11 +91,11 @@ module AvitoChannel
         offset += AvitoMessenger::Client::PAGE_LIMIT
       end
 
-      AvitoMessenger::Reconciler
-        .chats_to_sync(chats, cursor:)
-        .select { |chat| AvitoMessenger::Reconciler.changed_at(chat) <= horizon.to_i }
+      AvitoMessenger::Reconciler.chats_to_sync(chats, cursor:)
     end
 
+    # Reads the chat back to `since`, whatever it meets on the way: a message the webhook brought says nothing
+    # about older ones it may have missed.
     def sync_chat(chat, since)
       chat_id = chat['id'].to_s
       known   = AvitoMessageRef.known_ids(channel, chat_id)
@@ -98,7 +106,7 @@ module AvitoChannel
       loop do
         page = @client.messages(user_id, chat_id, offset:)
         messages.concat(page)
-        break if !AvitoMessenger::Reconciler.more_messages?(page, known_ids: known, since:, offset:)
+        break if !AvitoMessenger::Reconciler.more_messages?(page, since:, offset:)
 
         offset += AvitoMessenger::Client::PAGE_LIMIT
       end
@@ -106,7 +114,15 @@ module AvitoChannel
       AvitoMessenger::Reconciler
         .missing_messages(messages, known_ids: known)
         .select { |message| message.created_at.nil? || message.created_at >= since }
+        .reject { |message| defer?(message) }
         .count { |message| @importer.import(message) }
+    end
+
+    def defer?(message)
+      return false if !message.own? || message.created_at.nil? || message.created_at <= horizon
+
+      @floor = [@floor, message.created_at.to_i - 1].min
+      true
     end
 
     def save_cursor(value)

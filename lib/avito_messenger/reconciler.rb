@@ -38,12 +38,12 @@ module AvitoMessenger
         .sort_by { |message| [message.created_at || Time.at(0).utc, message.id] }
     end
 
-    # Whether to read an older page of one chat (pages come newest first). Stop at the first message already
-    # imported, or older than `since` (the backfill horizon of a newly connected account).
-    def more_messages?(page, known_ids:, offset:, since: nil, limit: Client::PAGE_LIMIT)
+    # Whether to read an older page of one chat (pages come newest first): until a page reaches back past
+    # `since`, the last point the poll is sure it read. A message already imported proves nothing about older
+    # ones: the webhook may have brought it and missed the ones before.
+    def more_messages?(page, since:, offset:, limit: Client::PAGE_LIMIT)
       return false if page.size < limit
       return false if offset + limit > Client::MAX_OFFSET
-      return false if page.any? { |message| known_ids.include?(message.id) }
       return false if since && page.any? { |message| message.created_at && message.created_at < since }
 
       true

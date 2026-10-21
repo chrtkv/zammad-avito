@@ -12,7 +12,8 @@ class AvitoMessageRef < ActiveRecord::Base # rubocop:disable Rails/ApplicationRe
   end
 
   # Records the message; false when it was recorded already. The unique index makes this the one place where
-  # the webhook and the poll, delivering the same message at once, decide which of them imports it.
+  # the webhook and the poll, delivering the same message at once, decide which of them imports it. Call it
+  # inside the transaction that creates the article, so the record and the article stand or fall together.
   def self.claim!(channel, chat_id, avito_message_id, article = nil)
     result = insert_all(
       [{ channel_id: channel.id, chat_id: chat_id.to_s, avito_message_id: avito_message_id.to_s,
@@ -25,9 +26,5 @@ class AvitoMessageRef < ActiveRecord::Base # rubocop:disable Rails/ApplicationRe
 
   def self.attach!(channel, avito_message_id, article)
     where(channel_id: channel.id, avito_message_id: avito_message_id.to_s).update_all(ticket_article_id: article.id) # rubocop:disable Rails/SkipsModelValidations
-  end
-
-  def self.release!(channel, avito_message_id)
-    where(channel_id: channel.id, avito_message_id: avito_message_id.to_s).delete_all
   end
 end

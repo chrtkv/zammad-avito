@@ -25,7 +25,13 @@ module AvitoChannel
       user_id = account['id']
       raise Invalid, __('Avito did not return the account id.') if user_id.blank?
       raise Invalid, __('This Avito account is already connected.') if duplicate?(user_id, channel)
+      # The channel's tickets, recorded messages, cursor and webhook belong to its account: other keys would
+      # send replies to those chats from a different shop.
+      if channel&.persisted? && channel.options[:user_id].present? && channel.options[:user_id].to_s != user_id.to_s
+        raise Invalid, __('These keys belong to another Avito account. Connect it as a new account.')
+      end
 
+      subscribed_url = channel&.options&.dig(:webhook, :url).presence
       channel ||= Channel.new(area: AREA, active: true)
       channel.group_id = group_id
       channel.options  = {
@@ -47,6 +53,11 @@ module AvitoChannel
         },
         webhook:          channel.options&.dig(:webhook) || {},
       }
+      # A new address is not subscribed until Avito is told: drop the old status, remember the old address
+      # for resubscribe_if_moved! to unsubscribe.
+      if subscribed_url && subscribed_url != webhook_url(channel)
+        channel.options[:webhook] = { 'url' => nil, 'subscribed_at' => nil, 'error' => nil, 'moved_from' => subscribed_url }
+      end
       channel.save!
       channel
     end
@@ -76,8 +87,17 @@ module AvitoChannel
       false
     end
 
-    def self.unsubscribe(channel, transport: AvitoMessenger::Transport.new)
-      url = channel.options.dig(:webhook, :url).presence || webhook_url(channel)
+    # After save! moved the webhook address: unsubscribe the old one, subscribe the new one.
+    def self.resubscribe_if_moved!(channel, transport: AvitoMessenger::Transport.new)
+      old_url = channel.options.dig(:webhook, :moved_from)
+      return false if old_url.blank?
+
+      unsubscribe(channel, url: old_url, transport:)
+      subscribe!(channel, transport:)
+    end
+
+    def self.unsubscribe(channel, url: nil, transport: AvitoMessenger::Transport.new)
+      url ||= channel.options.dig(:webhook, :url).presence || webhook_url(channel)
       AvitoChannel.client(channel, transport:).unsubscribe_webhook(url)
     rescue AvitoMessenger::Error => e
       Rails.logger.warn "Avito webhook of channel #{channel.id} not removed: #{e.message}"

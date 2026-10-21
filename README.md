@@ -4,8 +4,9 @@ An [Avito](https://www.avito.ru) Messenger channel for [Zammad](https://zammad.o
 Avito accounts become tickets, agent replies go back to the chat, and messages written in Avito's own
 interface show up in the ticket as well.
 
-**Status: works against a mocked Avito API; not yet run against the live one.** Target: Zammad 7.2, legacy
-(CoffeeScript) agent interface. See `docs/DESIGN.md` for how it works and what still needs the live API.
+**Status: tested against the live Avito API from a local Zammad (polling, replies, images both ways); the
+webhook has not run against Avito yet.** Target: Zammad 7.2, legacy (CoffeeScript) agent interface. See
+`docs/DESIGN.md` for how it works and what was checked live.
 
 ## What it does
 

@@ -49,6 +49,7 @@ module AvitoChannel
         'Shop'                                                                   => 'Магазин',
         'Without a listing (chat with the profile)'                              => 'Без объявления (чат по профилю)',
         'Open the chat in Avito'                                                 => 'Открыть чат в Авито',
+        'The Avito account is disabled; replies are not sent.'                   => 'Аккаунт Авито отключён, ответы не отправляются.',
         'Avito does not give out this chat through the API. Read and reply in Avito.' =>
                                                                                     'Авито не отдаёт этот чат через API. Читайте и отвечайте в Авито.',
         # Texts written into tickets

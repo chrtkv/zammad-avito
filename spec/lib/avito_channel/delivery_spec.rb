@@ -120,6 +120,19 @@ RSpec.describe 'Avito replies', :aggregate_failures do
       expect(article.reload.preferences.dig('avito', 'pieces').pluck('message_id')).to eq(%w[a1 a2])
     end
 
+    it 'sends nothing for a disabled account and says why, without retrying' do
+      channel.update!(active: false)
+      stub_send('a1')
+      article = reply
+
+      expect { described_class.perform_now(article.id) }.not_to have_enqueued_job(described_class)
+
+      expect(a_request(:post, send_url)).not_to have_been_made
+      expect(article.reload.preferences['delivery_status']).to eq('fail')
+      expect(article.preferences['delivery_status_message']).to include('disabled')
+      expect(ticket.reload.articles.last.body).to include('Unable to send Avito message')
+    end
+
     it 'gives up at once on a chat the subscription does not cover' do
       stub_request(:post, send_url).to_return(status: 402, body: { error: { code: 402, message: 'Перейдите на подписку с API мессенджера' } }.to_json)
       article = reply

@@ -11,7 +11,8 @@ webhook has not run against Avito yet.** Target: Zammad 7.2, legacy (CoffeeScrip
 ## What it does
 
 - **Several accounts**, each a channel of its own (Admin → Channels → Avito): own credentials, group, webhook
-  and polling. Adding, disabling or deleting one leaves the others alone.
+  and polling. Adding, disabling or deleting one leaves the others alone. A disabled account is off both
+  ways: no import, and replies from its tickets fail with "account is disabled" instead of going out.
 - **Incoming**: Avito's webhook for speed, plus a poll every few minutes for whatever the webhook missed. One
   ticket per chat, titled after the listing; the buyer becomes a customer. Images and voice messages arrive as
   attachments.

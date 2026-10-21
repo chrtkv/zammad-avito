@@ -17,6 +17,11 @@ module AvitoChannel
       @ticket  = article.ticket
       @channel = Channel.find_by(id: @ticket.preferences[:channel_id], area: AREA)
       raise Undeliverable, "ticket #{@ticket.id} has no Avito channel" if !@channel
+      # A disabled account is off both ways: nothing comes in and nothing goes out.
+      if !@channel.active
+        raise Undeliverable, Translation.translate(Setting.get('locale_default') || 'en-us',
+                                                   __('The Avito account is disabled; replies are not sent.'))
+      end
 
       @user_id = @channel.options[:user_id]
       @chat_id = @ticket.preferences.dig(:avito, :chat_id)

@@ -66,3 +66,7 @@ bin/preview       # local Zammad with the package at http://127.0.0.1:8080
 ```
 
 The preview is cut off from the real Avito API (its demo accounts would send made-up credentials there).
+
+## License
+
+MIT, see `LICENSE`. Zammad itself is AGPL-3.0; the package only adds its own files to a Zammad installation.

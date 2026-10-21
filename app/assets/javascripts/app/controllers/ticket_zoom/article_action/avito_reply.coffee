@@ -85,4 +85,26 @@ class AvitoReply
 
     params
 
+  # Avito takes images only. Delivery refuses anything else too, but by then the reply is saved and only its
+  # failed status says why; here the agent can still remove the file.
+  @validation: (type, params, ui) ->
+    return true if type isnt AvitoReply.TYPE
+
+    others = _.filter(ui.attachments || [], (file) ->
+      (ui.attachmentContentType(file) || '').indexOf('image/') isnt 0
+    )
+    return true if _.isEmpty(others)
+
+    new App.ControllerModal(
+      head: __('Avito accepts only images')
+      buttonCancel: __('Cancel')
+      buttonCancelClass: 'btn--danger'
+      buttonSubmit: false
+      message: App.i18n.translatePlain(__('Remove the attachments that are not images: %s'), _.pluck(others, 'filename').join(', '))
+      shown: true
+      small: true
+      container: ui.el.closest('.content')
+    )
+    false
+
 App.Config.set('310-AvitoReply', AvitoReply, 'TicketZoomArticleAction')

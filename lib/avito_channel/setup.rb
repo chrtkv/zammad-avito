@@ -52,6 +52,8 @@ module AvitoChannel
         'The Avito account is disabled; replies are not sent.'                   => 'Аккаунт Авито отключён, ответы не отправляются.',
         'Avito does not give out this chat through the API. Read and reply in Avito.' =>
                                                                                     'Авито не отдаёт этот чат через API. Читайте и отвечайте в Авито.',
+        'Avito accepts only images'                                              => 'Авито принимает только изображения',
+        'Remove the attachments that are not images: %s'                         => 'Уберите вложения, которые не являются изображениями: %s',
         # Texts written into tickets
         'Unable to send Avito message: %s'                                       => 'Не удалось отправить сообщение в Авито: %s',
         'Sent %s of %s messages; %s'                                             => 'Отправлено %s из %s сообщений; %s',

@@ -5,6 +5,8 @@
 #   bin/zammad-spec spec/requests/channels_avito_spec.rb:12
 #   bin/zammad-spec --prepare                    # (re)create the test database first
 #
+# A migration the package added since the database was prepared is run before the specs.
+#
 # Needs .zammad/: git clone --depth 1 --branch <tag> https://github.com/zammad/zammad.git .zammad
 set -euo pipefail
 
@@ -31,9 +33,21 @@ rsync -a --files-from="$manifest" /package/ /zammad/
 bundle check >/dev/null 2>&1 || bundle install --quiet
 EOF
 
-if [ "$prepare" = 1 ] || ! "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails runner "exit(Setting.exists?(name: %q(system_init_done)) ? 0 : 1)"' >/dev/null 2>&1; then
-  "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails db:drop db:create zammad:ci:test:prepare'
+# 0: ready; 1: no prepared database; 2: prepared, but a migration the package added since has not run on it.
+state=0
+if [ "$prepare" = 1 ]; then
+  state=1
+else
+  "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails runner "
+    exit(1) if !Setting.exists?(name: %q(system_init_done))
+    exit(ActiveRecord::Base.connection_pool.migration_context.needs_migration? ? 2 : 0)
+  "' >/dev/null 2>&1 || state=$?
 fi
+case "$state" in
+  0) ;;
+  2) "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails db:migrate' ;;
+  *) "${compose[@]}" exec -T zammad bash -c 'cd /zammad && bundle exec rails db:drop db:create zammad:ci:test:prepare' ;;
+esac
 
 if [ "$#" -eq 0 ]; then
   set -- $(cd "$root" && find spec -name '*_spec.rb' | sort)

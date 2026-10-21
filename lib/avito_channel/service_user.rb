@@ -5,7 +5,7 @@ module AvitoChannel
   # but without a password or an e-mail: nobody can sign in as them.
   module ServiceUser
     AVITO_LOGIN = 'avito.system'.freeze
-    # Avito's four dots, as the sidebar badge draws them, in Avito's colours: the "Avito" user's avatar.
+    # Avito's mark as in its app icon (avito.st/s/app/logo/180.png, measured 2026-10-22): the "Avito" user's avatar.
     AVITO_AVATAR = File.expand_path('avito_avatar.png', __dir__)
 
     def self.for(channel, profile = nil)
@@ -44,12 +44,13 @@ module AvitoChannel
         updated_by_id: 1,
         created_by_id: 1,
       )
-      add_avito_avatar(user) if user.image.blank? || user.image == 'none'
+      avito_avatar!(user) if user.image.blank? || user.image == 'none'
       user
     end
 
-    # A picture that cannot be stored leaves the initials, never fails the import.
-    def self.add_avito_avatar(user)
+    # Sets AVITO_AVATAR as the user's avatar, replacing one from before. A picture that cannot be stored leaves
+    # what was there, never fails the import.
+    def self.avito_avatar!(user)
       content = File.binread(AVITO_AVATAR)
       avatar  = Avatar.add(object: 'User', o_id: user.id, full: { content:, mime_type: 'image/png' },
                            resize: { content:, mime_type: 'image/png' }, source: 'avito', deletable: true,
@@ -59,6 +60,6 @@ module AvitoChannel
       Rails.logger.warn "Avatar of the Avito user not set: #{e.message}"
     end
 
-    private_class_method :create, :add_avito_avatar
+    private_class_method :create
   end
 end

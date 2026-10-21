@@ -2,7 +2,12 @@
 <% if @checking: %>
   <p class="text-muted"><%- @T('Checking…') %></p>
 <% else if @result.status is 'ok': %>
-  <p><%- @Icon('status', 'supergood-color inline') %> <%- @T('The keys work, and the account "%s" can read its chats.', @result.account) %></p>
+  <% if @result.messages_checked: %>
+    <p><%- @Icon('status', 'supergood-color inline') %> <%- @T('The keys work, and the account "%s" reads the messages of its latest chat.', @result.account) %></p>
+  <% else: %>
+    <p><%- @Icon('status', 'supergood-color inline') %> <%- @T('The keys work, and the account "%s" answers.', @result.account) %></p>
+    <p class="text-muted"><%- @T('The account has no chats yet, so reading messages could not be checked.') %></p>
+  <% end %>
   <% if @result.subscribed: %>
     <p><%- @T('Avito sends the account\'s messages to this webhook.') %></p>
   <% else: %>

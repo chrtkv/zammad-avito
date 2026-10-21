@@ -113,12 +113,18 @@ module AvitoChannel
       channel.destroy!
     end
 
-    # "Check connection" on the admin page: a new token, the account, one chat, and the webhook subscriptions
-    # Avito holds, in that order; the first failure says what is wrong. Four requests that change nothing.
+    # "Check connection" on the admin page: a new token, the account, the latest chat and one of its messages,
+    # and the webhook subscriptions Avito holds, in that order; the first failure says what is wrong. Five
+    # requests that change nothing. Reading a message matters: Avito can list the chats and still refuse their
+    # messages (402) when the subscription does not cover the listing's category (docs/DESIGN.md); a check of
+    # the list alone said "ok" then (review, 2026-10-21). Only the latest chat is read, so a chat of another
+    # category can still be refused.
     #
-    # { 'status' => 'ok' | 'auth' | 'subscription' | 'rate_limited' | 'network' | 'other_account' | 'error',
+    # { 'status' => 'ok' | 'auth' | 'subscription' | 'chat_refused' | 'rate_limited' | 'network' |
+    #               'other_account' | 'error',
     #   'message' => Avito's own words,
-    #   'account' => name, 'subscriptions' => [url], 'subscribed' => whether Avito has this channel's URL }
+    #   'account' => name, 'messages_checked' => false when the account has no chat to read,
+    #   'subscriptions' => [url], 'subscribed' => whether Avito has this channel's URL }
     def self.check(channel, transport: AvitoMessenger::Transport.new)
       user_id = channel.options[:user_id]
       client  = AvitoChannel.client(channel, transport:)
@@ -128,9 +134,16 @@ module AvitoChannel
         return { 'status' => 'other_account', 'message' => "Avito account #{account['id']}" }
       end
 
-      client.chats(user_id, limit: 1)
+      chat = client.chats(user_id, limit: 1).first
+      begin
+        client.messages(user_id, chat['id'], limit: 1) if chat
+      rescue AvitoMessenger::Error::SubscriptionRequired => e
+        return { 'status' => 'chat_refused', 'message' => e.message }
+      end
+
       urls = client.subscriptions.filter_map { |subscription| subscription['url'].presence }
-      { 'status' => 'ok', 'account' => account['name'], 'subscriptions' => urls, 'subscribed' => urls.include?(webhook_url(channel)) }
+      { 'status' => 'ok', 'account' => account['name'], 'messages_checked' => chat.present?,
+        'subscriptions' => urls, 'subscribed' => urls.include?(webhook_url(channel)) }
     rescue AvitoMessenger::Error => e
       { 'status' => check_status(e), 'message' => e.message }
     ensure

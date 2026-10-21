@@ -18,7 +18,6 @@ module AvitoChannel
       @client    = client || AvitoChannel.client(channel, transport:)
       @importer  = Importer.new(channel, client: @client, transport:)
       @now       = now
-      @requests  = 0
     end
 
     # { chats:, imported:, unavailable: }
@@ -65,43 +64,6 @@ module AvitoChannel
       @transport.finish
     end
 
-    # One batch of a history load (AvitoChannel::History): `limit` chats from `offset` of the chat list (newest
-    # change first), those changed since `cursor`, each read back to `since`, its messages filed as history
-    # (Importer, history: true). The poll's cursor is left alone.
-    #
-    # The list is read a whole page at a time, as the poll reads it, and the batch is cut out of the page: a
-    # page is one request, and batches smaller than a page still reach the last one, at offset 1000.
-    #
-    # { chats:, imported:, unavailable:, requests:, more: } — `more` when the list may hold further chats
-    # changed since the cursor.
-    def history(since:, cursor:, offset:, limit:)
-      @importer   = Importer.new(channel, client: @client, transport: @transport, history: true)
-      @floor      = horizon.to_i
-      @requests   = 1
-      page_offset = offset - (offset % AvitoMessenger::Client::PAGE_LIMIT)
-      page        = @client.chats(user_id, offset: page_offset)
-      batch       = page[(offset - page_offset), limit] || []
-      chats       = AvitoMessenger::Reconciler.chats_to_sync(batch, cursor:)
-
-      imported    = 0
-      unavailable = 0
-      chats.each do |chat|
-        imported += sync_chat(chat, since)
-        @importer.clear_uncovered(chat['id'])
-      rescue AvitoMessenger::Error::SubscriptionRequired
-        unavailable += 1
-        imported += 1 if @importer.import_uncovered(chat)
-      end
-
-      # The list is newest change first: a chat older than the cursor ends the walk.
-      reached = batch.empty? || batch.any? { |chat| AvitoMessenger::Reconciler.changed_at(chat) < cursor }
-      more    = !reached && (offset - page_offset + limit < page.size ||
-                             AvitoMessenger::Reconciler.more_chats?(page, cursor:, offset: page_offset))
-      { chats: chats.size, imported:, unavailable:, requests: @requests, more: }
-    ensure
-      @transport.finish
-    end
-
     private
 
     def user_id
@@ -143,7 +105,6 @@ module AvitoChannel
       offset   = 0
       loop do
         page = @client.messages(user_id, chat_id, offset:)
-        @requests += 1
         messages.concat(page)
         break if !AvitoMessenger::Reconciler.more_messages?(page, since:, offset:)
 

@@ -95,21 +95,31 @@ only the latest ~1100 of each are reachable.
 
 The admin page can also act on an account outside the schedule:
 
-- **Check connection** asks for a new token, the account, one chat and the webhook subscriptions Avito holds
-  (four requests, nothing changed) and says which failed: refused keys, no subscription (402), rate limit,
-  network, or keys that now open another account.
+- **Check connection** asks for a new token, the account, the latest chat and one of its messages, and the
+  webhook subscriptions Avito holds (five requests, nothing changed), and says which failed: refused keys,
+  no subscription (402 on the list), chats listed but their messages refused (402 on the messages: the
+  subscription does not cover the listing's category), rate limit, network, or keys that now open another
+  account. With no chat yet it says that reading messages was not checked; a chat of another category can
+  still be refused.
 - **Sync now** queues one poll (`AvitoSyncJob`, `Channel#fetch(true)`) whatever the poll interval.
 - **Load history** imports the chats of N past days for an account already connected (`backfill_days`
-  applies to the first poll only). It walks the chat list down from the newest change, 20 chats per job
-  (`AvitoHistoryJob`), each read back to the start date, and the next job waits 3 s per request the last one
-  made, about 20 requests a minute: far below the hundred in a few minutes that set off Avito's throttling.
-  No worker is held between batches. A chat that gets a message during the walk jumps to the top, past it,
-  so a last sweep reads the chats changed since the load began. The ~1100 limit applies: older chats and
+  applies to the first poll only). It walks the chat list down from the newest change and reads each chat
+  back to the start date, page by page. A job (`AvitoHistoryJob`) makes 10 requests, every one through the
+  transport counted (plus the file of the one message it was importing when the budget ran out), and stops
+  where that leaves it, between chats or inside a chat's history; the next job goes on from there, in a chat
+  by its id. It waits 3 s per request the last job made: about 20 requests a minute and no burst above
+  ~10, far below the hundred in a few minutes that set off Avito's throttling. (Batches of 20 whole chats
+  made 141 requests in a row on a deep history.) No worker is held between jobs. A chat that gets a message
+  during the walk jumps to the top, past it, so a last sweep reads the chats changed since the load began. The ~1100 limit applies: older chats and
   messages cannot be reached. A history message older than what its chat's tickets already hold is filed
   in the chat's ticket as it is, without reopening it or starting a new one; a newer one is a missed
   message and counts as usual. The poll's cursor is left alone. Progress lives in the cache, not in the
   channel's preferences, which a running poll would write back as it read them; the jobs carry their whole
-  state, so a lost cache entry only blanks the page's progress line.
+  state, so a lost cache entry only blanks the page's progress line. That happens on every start of the
+  Docker image's `zammad-init`, which clears Rails' cache: a running load shows again after its next job, a
+  finished one's line is gone, and for those seconds the page would let a second load start beside it
+  (harmless: imports are idempotent, but it doubles the requests). The page polls the line every 10 s while
+  a load runs.
 
 ## Message types
 
@@ -127,7 +137,8 @@ The admin page can also act on an account outside the schedule:
 ## Ticket mapping
 
 - A chat's tickets are found through its recorded messages, not through the customer, so a corrected
-  customer or a merge keeps the chat on its ticket. "Closed" is a state of type closed, merged or removed,
+  customer or a merge keeps the chat on its ticket. A merged ticket can therefore hold several chats, while
+  its preferences name only its own first one; replies are routed per reply (see below). "Closed" is a state of type closed, merged or removed,
   whatever its name.
 - One ticket per Avito chat per account: `ticket.preferences = { channel_id, avito: { user_id, chat_id,
   chat_type, item_id, item_url, item_title } }`. A closed ticket gets a new one on the next customer message,
@@ -149,11 +160,22 @@ The admin page can also act on an account outside the schedule:
   another interface) with a clear message rather than dropping it silently.
 - A reply that fails after some of its messages went out says so: "Sent 2 of 3 messages; …", in the
   delivery status and in the "unable to send" note.
-- Delivery status, retries and the "unable to send" note follow Zammad's Telegram job. A 429 retries after
-  the delay Avito names; a 402 (the chat is not covered) fails at once.
+- A reply goes to the chat its first attempt went to (a retry finishes where its first pieces are), else to
+  the chat of the message it answers (`in_reply_to`, set by the "reply" action), else to the ticket's one
+  chat. A ticket holding several chats (merged) and a reply naming none is not sent: the agent is asked to
+  use "reply" on a message of the right chat. Taking the ticket's preferences answered one buyer in another
+  buyer's chat.
+- Delivery status and the "unable to send" note follow Zammad's Telegram job. Retries of the delivery, the
+  webhook import and the history load go through `AvitoChannel::JobRetry`: one counter (ActiveJob's
+  executions), four runs in all, each after the delay Avito names in a 429 or a growing one otherwise;
+  giving up writes one note and raises nothing. A 402 (the chat is not covered) fails at once. (ActiveJob's
+  `retry_on` beside a hand-made 429 retry sent a rate-limited reply seven times with four notes.)
 - A piece marked attempted but without an Avito id is first looked for among the chat's latest messages
-  written at or after the attempt (text by its text, an image as any own image Zammad does not know) before
-  it is sent again.
+  written at or after the attempt before it is sent again: a text by its text, an image by an address of the
+  image Zammad uploaded for it (an image's upload is saved before `messages/image`, and dropped when Avito
+  answers that with an error). An image that may have gone out (its send got no answer) and is not found
+  stops the delivery with a request to look in Avito: sending it again could show it twice, and taking any
+  own image for it confirmed a manager's picture as the reply.
 - The message record, its article and the link between them are written in one transaction, so an import
   cut short leaves nothing behind that would block the next one.
 - An account's keys cannot be swapped for another account's: tickets, records and the webhook belong to it.
@@ -211,3 +233,6 @@ These need the channel running on a public address, with the webhook subscribed:
 3. Are buyer ids stable across two of our accounts?
 4. The webhook sender's user agent and source addresses (for firewalls and fail2ban rules on the way in).
 5. Do the chats the subscription does not cover reach the webhook at all?
+6. Does an image message carry the addresses `uploadImages` gave for that image? Delivery and the echo
+   check rely on it to recognise an image whose send answer was lost; if not, such an image always ends in
+   the "look in Avito" failure instead of being found.

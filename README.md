@@ -22,10 +22,11 @@ webhook has not run against Avito yet.** Target: Zammad 7.2, legacy (CoffeeScrip
 - **Replies**: the "reply" action on an Avito message; long replies go out as several 1000-character
   messages, images as images. The reply form refuses other attachments before the reply is saved (delivery
   refuses them too, before anything is sent). A reply that fails part-way says how many of its messages went
-  out.
-- **Admin page**: per account, the webhook's last delivery, "Check connection" (keys, subscription, webhook
-  subscriptions at Avito), "Sync now", and "Load history" of past days, paced so Avito does not throttle the
-  server. Avito gives out only the latest ~1100 chats of an account and ~1100 messages of each.
+  out. In a ticket merged from several chats, a reply goes to the chat of the message it answers.
+- **Admin page**: per account, the webhook's last delivery, "Check connection" (keys, subscription, reading a
+  message, webhook subscriptions at Avito), "Sync now", and "Load history" of past days, paced so Avito does
+  not throttle the server. Avito gives out only the latest ~1100 chats of an account and ~1100 messages of
+  each.
 
 ## Requirements
 

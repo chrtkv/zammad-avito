@@ -15,6 +15,7 @@ class ChannelAvito extends App.ControllerSubContent
   @checkFailures:
     auth:          __('Avito refused the API keys.')
     subscription:  __('Avito refuses the chats: the account has no Messenger API subscription.')
+    chat_refused:  __('Avito lists the chats but refuses their messages: the Messenger API subscription does not cover them, most likely because of the listing\'s category.')
     rate_limited:  __('Avito is limiting requests from this system. Try again in a few minutes.')
     network:       __('Avito could not be reached from this system.')
     other_account: __('These keys now open another Avito account.')
@@ -45,19 +46,41 @@ class ChannelAvito extends App.ControllerSubContent
       channel = App.Channel.find(channel_id)
       continue if !channel || !channel.options
 
-      group   = channel.group_id && App.Group.find(channel.group_id)
-      history = data.history?[channel_id]
+      group = channel.group_id && App.Group.find(channel.group_id)
       channels.push(
         channel:    channel
         groupName:  if group then group.displayName() else '-'
         webhookUrl: data.webhook_urls[channel_id]
-        history:    history
-        historyAt:  history?.finished_at && new Date(history.finished_at * 1000).toISOString()
+        history:    data.history?[channel_id]
       )
 
     @html App.view('avito/index')(
       items: channels
     )
+    @history = _.extend({}, data.history)
+    @pollHistory()
+
+  # A history load runs in the background: its line on the page follows it until it is through or stopped.
+  pollHistory: =>
+    return if _.isEmpty(@runningHistory())
+    @delay(@refreshHistory, 10000, 'avito_history_poll')
+
+  runningHistory: =>
+    _.filter(_.keys(@history || {}), (id) => @history[id] && !@history[id].finished_at)
+
+  refreshHistory: =>
+    for id in @runningHistory()
+      do (id) =>
+        @ajax(
+          id:   "avito_history_state_#{id}"
+          type: 'GET'
+          url:  "#{@apiPath}/channels_avito/#{id}/history"
+          processData: true
+          success: (state) =>
+            @history[id] = state
+            @$(".action[data-id='#{id}'] .js-historyStatus").html(App.view('avito/history_status')(history: state))
+            @pollHistory()
+        )
 
   channelId: (e) ->
     $(e.target).closest('.action').data('id')

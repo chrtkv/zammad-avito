@@ -59,7 +59,13 @@ module AvitoChannel
         'Load history'                                                           => 'Загрузить историю',
         'Connection check'                                                       => 'Проверка подключения',
         'Checking…'                                                              => 'Проверяю…',
-        'The keys work, and the account "%s" can read its chats.'                => 'Ключи работают, аккаунт «%s» читает свои чаты.',
+        'The keys work, and the account "%s" reads the messages of its latest chat.' =>
+                                                                                    'Ключи работают, аккаунт «%s» читает сообщения своего последнего чата.',
+        'The keys work, and the account "%s" answers.'                           => 'Ключи работают, аккаунт «%s» отвечает.',
+        'The account has no chats yet, so reading messages could not be checked.' =>
+                                                                                    'У аккаунта пока нет чатов, поэтому чтение сообщений проверить не удалось.',
+        "Avito lists the chats but refuses their messages: the Messenger API subscription does not cover them, most likely because of the listing's category." =>
+                                                                                    'Авито показывает чаты, но не отдаёт их сообщения: подписка на Messenger API их не покрывает, скорее всего из-за категории объявления.',
         "Avito sends the account's messages to this webhook."                    => 'Авито отправляет сообщения аккаунта на этот вебхук.',
         'Avito has no subscription for this webhook. Subscribe it again.'        => 'У Авито нет подписки на этот вебхук. Подпишите его заново.',
         'Webhook addresses Avito has for these keys:'                            => 'Адреса вебхуков, которые Авито знает для этих ключей:',
@@ -78,8 +84,8 @@ module AvitoChannel
         'Load History'                                                           => 'Загрузка истории',
         'Load'                                                                   => 'Загрузить',
         'Days to load'                                                           => 'Сколько дней загрузить',
-        "Messages of this many past days are imported in the background, a few chats a minute, so that Avito does not start throttling this system. A message older than the ones of its chat already in Zammad goes into the chat's ticket without reopening it." =>
-                                                                                    'Сообщения за столько последних дней загружаются в фоне, по нескольку чатов в минуту, чтобы Авито не начал ограничивать эту систему. Сообщение старше тех, что уже есть в Zammad из его чата, попадает в тикет чата и не открывает его заново.',
+        "Messages of this many past days are imported in the background, about twenty requests a minute, so that Avito does not start throttling this system. A message older than the ones of its chat already in Zammad goes into the chat's ticket without reopening it." =>
+                                                                                    'Сообщения за столько последних дней загружаются в фоне, около двадцати запросов в минуту, чтобы Авито не начал ограничивать эту систему. Сообщение старше тех, что уже есть в Zammad из его чата, попадает в тикет чата и не открывает его заново.',
         'Avito gives out only the latest ~1100 chats of an account, and the latest ~1100 messages of each chat: anything older cannot be loaded.' =>
                                                                                     'Авито отдаёт только последние ~1100 чатов аккаунта и последние ~1100 сообщений каждого чата: более старое загрузить нельзя.',
         'The history could not be loaded.'                                       => 'Не удалось запустить загрузку истории.',

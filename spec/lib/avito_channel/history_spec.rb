@@ -20,43 +20,100 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
 
   before { Rails.cache.delete("avito-history-#{channel.id}") }
 
-  describe 'AvitoChannel::Sync#history' do
-    let(:sync) { AvitoChannel::Sync.new(channel, now: now) }
+  describe AvitoChannel::History::Batch do
+    def state(**overrides)
+      { 'run' => 'r1', 'days' => 30, 'since' => (now - 30.days).to_i, 'started_at' => now.to_i, 'phase' => 'walk',
+        'offset' => 0, 'chat' => nil, 'page' => 0, 'chats' => 0, 'imported' => 0, 'unavailable' => 0 }.merge(overrides.stringify_keys)
+    end
 
-    it 'reads the chats changed since `since` back to it, and leaves the poll\'s cursor alone' do
+    def batch(from = state)
+      described_class.new(channel, from, transport: AvitoMessenger::Transport.new, now: now).run
+    end
+
+    def stub_message_page(chat_id, offset, messages)
+      stub_request(:get, "https://api.avito.ru/messenger/v3/accounts/#{account}/chats/#{chat_id}/messages/")
+        .with(query: { limit: 100, offset: offset })
+        .to_return(status: 200, body: messages.to_json, headers: { 'Content-Type' => 'application/json' })
+    end
+
+    it 'reads the chats changed since the start date back to it, and leaves the poll\'s cursor alone' do
       channel.update!(preferences: { avito_cursor: (now - 1.minute).to_i })
       stub_chats(avito_chat(updated: (now - 2.days).to_i), avito_chat(id: 'ancient', updated: (now - 40.days).to_i))
       stub_messages('chat-1', [list_message('m2', created: now - 2.days), list_message('m1', created: now - 20.days),
                                list_message('m0', created: now - 31.days)])
 
-      result = sync.history(since: now - 30.days, cursor: (now - 30.days).to_i, offset: 0, limit: 20)
+      result, requests, through = batch
 
-      expect(result).to eq(chats: 1, imported: 2, unavailable: 0, requests: 2, more: false)
+      expect(result).to include('chats' => 1, 'imported' => 2, 'unavailable' => 0, 'offset' => 1, 'chat' => nil)
+      expect([requests, through]).to eq([2, true])
       expect(AvitoMessageRef.known?(channel, 'm0')).to be(false)
       expect(a_request(:get, %r{/chats/ancient/messages})).not_to have_been_made
       expect(channel.reload.preferences[:avito_cursor]).to eq((now - 1.minute).to_i)
     end
 
-    it 'cuts its batch out of a page of the chat list' do
-      chats = (1..25).map { |n| avito_chat(id: "chat-#{n}", updated: (now - n.hours).to_i) }
-      stub_chats(*chats)
-      chats.each { |chat| stub_messages(chat['id'], []) }
-
-      first  = sync.history(since: now - 30.days, cursor: (now - 30.days).to_i, offset: 0, limit: 20)
-      second = sync.history(since: now - 30.days, cursor: (now - 30.days).to_i, offset: 20, limit: 20)
-
-      expect(first).to include(chats: 20, more: true)
-      expect(second).to include(chats: 5, more: false)
-      expect(a_request(:get, %r{/chats/chat-21/messages})).to have_been_made.once
-      expect(a_request(:get, %r{/messenger/v2/accounts/#{account}/chats\?.*offset=0})).to have_been_made.twice
-    end
-
-    it 'stops at the first chat older than `since`' do
+    it 'stops at the first chat older than the start date' do
       stub_chats(*(1..25).map { |n| avito_chat(id: "chat-#{n}", updated: (now - n.days).to_i) })
       (1..9).each { |n| stub_messages("chat-#{n}", []) }
 
-      expect(sync.history(since: now - 9.5.days, cursor: (now - 9.5.days).to_i, offset: 0, limit: 20))
-        .to include(chats: 9, more: false)
+      first, = batch(state(since: (now - 9.5.days).to_i))
+      result, _requests, through = batch(first)
+      expect(result).to include('chats' => 9)
+      expect(through).to be(true)
+      expect(a_request(:get, %r{/chats/chat-10/messages})).not_to have_been_made
+    end
+
+    # Review, 2026-10-21: a batch of twenty whole chats made 141 requests in a row on a deep history.
+    it 'stops after its budget of requests, inside a chat\'s history, and the next batch reads on from there' do
+      stub_const('AvitoChannel::History::BUDGET', 3)
+      page = ->(from) { Array.new(100) { |i| list_message("m#{from + i}", created: now - 1.day - (from + i).minutes) } }
+      stub_chats(avito_chat(updated: (now - 1.day).to_i), avito_chat(id: 'chat-2', updated: (now - 2.days).to_i))
+      stub_message_page('chat-1', 0, page.call(0))
+      stub_message_page('chat-1', 100, page.call(100))
+      stub_message_page('chat-1', 200, [list_message('m200', created: now - 2.days)])
+      stub_messages('chat-2', [])
+
+      first, requests, through = batch
+      expect(first).to include('chat' => 'chat-1', 'page' => 200, 'imported' => 200, 'chats' => 1)
+      expect([requests, through]).to eq([3, false])
+
+      second, requests, through = batch(first)
+      expect(second).to include('offset' => 2, 'chat' => nil, 'imported' => 201, 'chats' => 2)
+      expect([requests, through]).to eq([3, true])
+      expect(a_request(:get, %r{/messenger/v2/accounts/#{account}/chats\?})).to have_been_made.twice
+    end
+
+    it 'stops inside a page when imports use up the budget; the next batch reads the page again' do
+      stub_const('AvitoChannel::History::BUDGET', 3)
+      sizes = ->(n) { { 'image' => { 'sizes' => { '640x480' => "https://img.example/#{n}.jpg" } } } }
+      stub_request(:get, %r{\Ahttps://img\.example/}).to_return(status: 200, body: 'JPEG', headers: { 'Content-Type' => 'image/jpeg' })
+      stub_chats(avito_chat(updated: (now - 1.day).to_i))
+      stub_messages('chat-1', (1..5).map do |n|
+        list_message("i#{n}", created: now - 1.day - n.minutes).merge(type: 'image', content: sizes.call(n))
+      end)
+
+      runs = []
+      current = state
+      loop do
+        current, requests, through = batch(current)
+        runs << requests
+        break if through || runs.size > 10
+      end
+
+      expect(runs.max).to be <= 4 # the budget, and the file of the image being imported when it ran out
+      expect(current['imported']).to eq(5)
+      expect((1..5).all? { |n| AvitoMessageRef.known?(channel, "i#{n}") }).to be(true)
+    end
+
+    it 'goes on in the chat it was in by its id, without reading the chat list' do
+      stub_message_page('chat-7', 100, [list_message('old', created: now - 3.days)])
+      stub_avito_chat(avito_chat(id: 'chat-7'))
+      stub_chats
+
+      result, = batch(state(offset: 6, chat: 'chat-7', page: 100))
+
+      expect(a_request(:get, %r{/chats/chat-7/messages/\?limit=100&offset=100})).to have_been_made
+      expect(a_request(:get, %r{/messenger/v2/accounts/#{account}/chats\?})).to have_been_made.once # for the next chat
+      expect(result).to include('imported' => 1, 'offset' => 7)
     end
 
     context 'with a chat that already has a ticket' do
@@ -75,7 +132,7 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
       it 'files older messages with it, without reopening it' do
         stub_messages('chat-1', [list_message('m9', created: now - 1.hour), list_message('m1', created: now - 5.days)])
 
-        expect(sync.history(since: now - 30.days, cursor: (now - 30.days).to_i, offset: 0, limit: 20)).to include(imported: 1)
+        expect(batch.first).to include('imported' => 1)
         expect(Ticket::Article.find_by(message_id: "avito.#{account}.chat-1.m1").ticket).to eq(ticket)
         expect(ticket.reload.state).to eq(closed)
       end
@@ -83,7 +140,7 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
       it 'treats a newer message it finds as one the poll missed' do
         stub_messages('chat-1', [list_message('m10', created: now - 10.minutes), list_message('m9', created: now - 1.hour)])
 
-        sync.history(since: now - 30.days, cursor: (now - 30.days).to_i, offset: 0, limit: 20)
+        batch
         expect(Ticket::Article.find_by(message_id: "avito.#{account}.chat-1.m10").ticket).not_to eq(ticket)
       end
     end
@@ -98,7 +155,7 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
 
     it 'queues the first batch and refuses a second load while it runs' do
       expect { described_class.start!(channel, days: 7) }.to have_enqueued_job(AvitoHistoryJob)
-      expect(described_class.state(channel)).to include('days' => 7, 'phase' => 'walk', 'offset' => 0)
+      expect(described_class.state(channel)).to include('days' => 7, 'phase' => 'walk', 'offset' => 0, 'chat' => nil)
       expect { described_class.start!(channel, days: 7) }.to raise_error(described_class::Invalid)
     end
 
@@ -126,7 +183,7 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
       expect(AvitoChannel::History.state(channel)).not_to have_key('error')
       expect(AvitoChannel::History.state(channel)['finished_at']).to be_present
       expect(AvitoMessageRef.where(channel_id: channel.id).count).to eq(25)
-      expect(a_request(:get, %r{/messenger/v2/accounts/#{account}/chats\?})).to have_been_made.times(3)
+      expect(a_request(:get, %r{/messenger/v2/accounts/#{account}/chats\?})).to have_been_made.times(4)
     end
 
     it 'waits before the next batch in proportion to the requests the last one made' do
@@ -138,7 +195,7 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
 
       freeze_time do
         expect { described_class.perform_now(channel.id, state) }
-          .to have_enqueued_job(described_class).at((21 * AvitoChannel::History::PACE).seconds.from_now)
+          .to have_enqueued_job(described_class).at((AvitoChannel::History::BUDGET * AvitoChannel::History::PACE).seconds.from_now)
       end
     end
 

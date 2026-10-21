@@ -71,17 +71,7 @@
     </div>
     <div class="action-block action-block--flex">
       <h3><%- @T('History') %></h3>
-      <% history = item.history %>
-      <% if history && history.error: %>
-        <div class="alert alert--danger" role="alert"><%- @T('Loading the history stopped:') %> <%= history.error %></div>
-      <% else if history && history.finished_at: %>
-        <p><%- @T('History loaded') %> <%- @humanTime(item.historyAt) %>: <%- @T('the last %s days, %s chats read, %s messages imported.', history.days, history.chats, history.imported) %></p>
-      <% else if history: %>
-        <p><%- @T('Loading the last %s days: %s chats read, %s messages imported so far.', history.days, history.chats, history.imported) %></p>
-      <% end %>
-      <% if history && history.unavailable > 0: %>
-        <p class="text-muted"><%- @T('%s chats are not covered by the Messenger API subscription: only their latest message was imported.', history.unavailable) %></p>
-      <% end %>
+      <div class="js-historyStatus"><%- App.view('avito/history_status')(history: item.history) %></div>
       <p class="text-muted"><%- @T('Avito gives out only the latest ~1100 chats of an account, and the latest ~1100 messages of each chat: anything older cannot be loaded.') %></p>
     </div>
     <div class="action-block action-block--flex js-checkResult hide"></div>

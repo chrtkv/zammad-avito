@@ -60,6 +60,11 @@ class ChannelsAvitoController < ApplicationController
     raise Exceptions::UnprocessableContent, e.message
   end
 
+  # The progress of a history load, which the admin page follows while it runs.
+  def history_state
+    render json: AvitoChannel::History.state(find_channel)
+  end
+
   def destroy
     AvitoChannel::Account.destroy!(find_channel)
     render json: {}

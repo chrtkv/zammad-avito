@@ -212,7 +212,8 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
       before do
         stub_avito(:post, '/token', body: { access_token: 'checked', expires_in: 86_400 })
         stub_avito(:get, '/core/v1/accounts/self', body: { id: AvitoChannelSpecHelpers::AVITO_USER_ID, name: 'Demo Shop' })
-        stub_avito(:get, "/messenger/v2/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats", body: { chats: [] })
+        stub_avito(:get, "/messenger/v2/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats", body: { chats: [avito_chat] })
+        stub_avito(:get, "/messenger/v3/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats/chat-1/messages/", body: [])
         stub_avito(:post, '/messenger/v1/subscriptions', body: { subscriptions: [{ url: url, version: '3' }] })
       end
 
@@ -220,10 +221,28 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
         post "/api/v1/channels_avito/#{channel.id}/check", as: :json
 
         expect(response).to have_http_status(:ok)
-        expect(json_response).to eq('status' => 'ok', 'account' => 'Demo Shop', 'subscriptions' => [url], 'subscribed' => true)
+        expect(json_response).to eq('status' => 'ok', 'account' => 'Demo Shop', 'messages_checked' => true,
+                                    'subscriptions' => [url], 'subscribed' => true)
         expect(a_request(:post, 'https://api.avito.ru/token')).to have_been_made
         expect(a_request(:get, %r{/chats\?.*limit=1})).to have_been_made
+        expect(a_request(:get, %r{/chats/chat-1/messages/\?limit=1})).to have_been_made
         expect(channel.reload.options.dig(:auth, :access_token)).to eq('checked')
+      end
+
+      # Review, 2026-10-21: a list Avito gives out with messages it refuses passed for a working account.
+      it 'reports chats whose messages Avito refuses' do
+        stub_avito(:get, "/messenger/v3/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats/chat-1/messages/", status: 402,
+                                                                                                                    body: { error: { code: 402, message: 'Перейдите на подписку с API мессенджера' } })
+
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'chat_refused', 'message' => include('подписку'))
+      end
+
+      it 'says when there was no chat to read a message of' do
+        stub_avito(:get, "/messenger/v2/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats", body: { chats: [] })
+
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'ok', 'messages_checked' => false)
       end
 
       it 'says when Avito has no subscription for this webhook' do
@@ -292,6 +311,9 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
 
         get '/api/v1/channels_avito', as: :json
         expect(json_response.dig('history', channel.id.to_s)).to include('days' => 14)
+
+        get "/api/v1/channels_avito/#{channel.id}/history", as: :json
+        expect(json_response).to include('days' => 14, 'chats' => 0)
       end
 
       it 'refuses a number of days out of range' do

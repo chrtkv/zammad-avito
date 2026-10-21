@@ -234,15 +234,23 @@ On 2026-10-20, with the Messenger API subscription paid:
   replies from a local Zammad on 2026-10-20 the poll read the chat and imported nothing twice. Messages a
   manager wrote in Avito's interface came in through the poll as replies of the account's service user.
 
+## Checked through the webhook
+
+On 2026-10-21, with the channel on a public address and the webhook subscribed:
+
+- **The webhook delivers own messages.** A reply sent from Zammad came back through the webhook within a
+  second, and so did the customer's answer two minutes later.
+- **The id `send` returns is the id the webhook reports.** The echo of that reply was recognised by its id and
+  not imported a second time.
+- **The sender:** user agent `Go-http-client/1.1`, from 176.114.121.96 and 176.114.125.105 (that day). The user
+  agent is a library's: a fail2ban rule against HTTP libraries on the way in must leave the webhook's path alone.
+- **No probe on subscribe.** Avito sent nothing when the webhook was subscribed; the first delivery came with the
+  first message.
+
 ## Still to verify against the live API
 
-These need the channel running on a public address, with the webhook subscribed:
-
-1. Does the webhook deliver own messages (`author_id == user_id`)?
-2. Is the id returned by `send` the same id the webhook reports? (The message list: yes, see above.)
-3. Are buyer ids stable across two of our accounts?
-4. The webhook sender's user agent and source addresses (for firewalls and fail2ban rules on the way in).
-5. Do the chats the subscription does not cover reach the webhook at all?
-6. Does an image message carry the addresses `uploadImages` gave for that image? Delivery and the echo
+1. Are buyer ids stable across two of our accounts?
+2. Do the chats the subscription does not cover reach the webhook at all?
+3. Does an image message carry the addresses `uploadImages` gave for that image? Delivery and the echo
    check rely on it to recognise an image whose send answer was lost; if not, such an image always ends in
    the "look in Avito" failure instead of being found.

@@ -10,7 +10,9 @@ module AvitoMessenger
   #   client.messages(user_id, chat_id)
   class Client
     BASE_URL   = 'https://api.avito.ru'.freeze
-    USER_AGENT = 'zammad-avito'.freeze
+    # Says what is calling, honestly: an integration, not a browser. Library defaults (curl, Ruby) look like the
+    # scrapers Avito's edge throttles; a plain name and purpose do not pretend to be anything.
+    USER_AGENT = 'zammad-avito/0.1 (Zammad Avito Messenger channel)'.freeze
 
     # Documented limits: text per message, page size and the largest offset for chat and message lists.
     TEXT_LIMIT  = 1000

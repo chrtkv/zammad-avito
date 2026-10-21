@@ -52,6 +52,7 @@ RSpec.describe AvitoMessenger::Client do
       expect(client.account['id']).to eq(user_id)
       expect(transport.requests.map(&:path)).to eq(['/core/v1/accounts/self'])
       expect(transport.requests.first.headers['Authorization']).to eq('Bearer cached')
+      expect(transport.requests.first.headers['User-Agent']).to start_with('zammad-avito/')
     end
 
     context 'when the stored token expires within the refresh margin' do

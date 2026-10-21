@@ -14,8 +14,7 @@ class AvitoHistoryJob < ApplicationJob
     return if !channel || !AvitoChannel::History.current?(channel, state)
 
     if !channel.active
-      locale = Setting.get('locale_default') || 'en-us'
-      AvitoChannel::History.finish!(channel, state, error: Translation.translate(locale, __('The Avito account is disabled.')))
+      AvitoChannel::History.finish!(channel, state, error: AvitoChannel.translate(__('The Avito account is disabled.')))
       return
     end
 

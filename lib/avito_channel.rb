@@ -78,20 +78,24 @@ module AvitoChannel
 
   # The internal note on a ticket whose chat Avito does not give out through the API.
   def self.uncovered_note(item_url)
-    locale = Setting.get('locale_default') || 'en-us'
-    text   = Translation.translate(locale, __("Avito does not give out this chat's messages through the API: the Messenger API subscription does not cover it, most likely because of the listing's category. Only the chat's latest message reaches this ticket; earlier ones may be missing. Read the chat and reply in Avito."))
+    text = translate(__("Avito does not give out this chat's messages through the API: the Messenger API subscription does not cover it, most likely because of the listing's category. Only the chat's latest message reaches this ticket; earlier ones may be missing. Read the chat and reply in Avito."))
     [text, item_url.presence, 'https://www.avito.ru/profile/messenger'].compact.join("\n")
   end
 
   # Texts for Avito messages that carry none, in the system's default language.
   def self.labels
-    locale = Setting.get('locale_default') || 'en-us'
     {
-      image:       Translation.translate(locale, __('Image')),
-      voice:       Translation.translate(locale, __('Voice message')),
-      missed_call: Translation.translate(locale, __('Missed call')),
-      deleted:     Translation.translate(locale, __('The message was deleted')),
-      unsupported: Translation.translate(locale, __('Avito "%s" message: its content is not available through the API')),
+      image:       translate(__('Image')),
+      voice:       translate(__('Voice message')),
+      missed_call: translate(__('Missed call')),
+      deleted:     translate(__('The message was deleted')),
+      unsupported: translate(__('Avito "%s" message: its content is not available through the API')),
     }
+  end
+
+  # A text in the system's default language, for what the channel writes into tickets, delivery statuses and
+  # job outcomes (there is no reader's language to go by).
+  def self.translate(source, *)
+    Translation.translate(Setting.get('locale_default') || 'en-us', source, *)
   end
 end

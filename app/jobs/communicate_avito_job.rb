@@ -56,7 +56,7 @@ class CommunicateAvitoJob < ApplicationJob
     Ticket::Article.create!(
       ticket_id:     article.ticket_id,
       content_type:  'text/plain',
-      body:          translate(__('Unable to send Avito message: %s'), message),
+      body:          AvitoChannel.translate(__('Unable to send Avito message: %s'), message),
       internal:      true,
       sender:        Ticket::Article::Sender.find_by(name: 'System'),
       type:          Ticket::Article::Type.find_by(name: 'note'),
@@ -74,10 +74,6 @@ class CommunicateAvitoJob < ApplicationJob
     sent   = pieces.count { |piece| piece['message_id'].present? }
     return message if sent.zero? || sent == pieces.size
 
-    translate(__('Sent %s of %s messages; %s'), sent, pieces.size, message)
-  end
-
-  def translate(source, *)
-    Translation.translate(Setting.get('locale_default') || 'en-us', source, *)
+    AvitoChannel.translate(__('Sent %s of %s messages; %s'), sent, pieces.size, message)
   end
 end

@@ -19,8 +19,7 @@ module AvitoChannel
       raise Undeliverable, "ticket #{@ticket.id} has no Avito channel" if !@channel
       # A disabled account is off both ways: nothing comes in and nothing goes out.
       if !@channel.active
-        raise Undeliverable, Translation.translate(Setting.get('locale_default') || 'en-us',
-                                                   __('The Avito account is disabled; replies are not sent.'))
+        raise Undeliverable, AvitoChannel.translate(__('The Avito account is disabled; replies are not sent.'))
       end
 
       @user_id = @channel.options[:user_id]

@@ -82,8 +82,8 @@ the reconciliation poll below sees them in `/messenger/v3/.../messages` with `di
 Two paths, both idempotent by Avito message id:
 
 1. **Webhook** (`POST /messenger/v3/webhook`), for speed. Avito wants a 200 within 2 s, so the controller
-   checks the token and the account and enqueues a job; parsing and ticket work happen in the job. Avito
-   checks the URL by POSTing `{}`; that probe gets a plain 200.
+   checks the token and the account and enqueues a job; parsing and ticket work happen in the job. A `{}`
+   probe gets a plain 200 (Avito's documentation mentions one; none came on subscribing, see below).
 2. **Reconciliation poll** via `Channel::Driver::Avito#fetch`, every few minutes per account: list chats,
    take those whose last message is newer than the stored cursor, read each of them back to the cursor
    (less a few minutes of clock slack) and import whatever is missing. A message already imported is no

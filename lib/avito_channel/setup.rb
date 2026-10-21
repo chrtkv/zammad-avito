@@ -9,6 +9,7 @@ module AvitoChannel
     TRANSLATIONS = {
       'ru' => {
         # Interface
+        'Avito'                                                                  => 'Авито',
         'Accounts'                                                               => 'Аккаунты',
         'Add Account'                                                            => 'Добавить аккаунт',
         'Add Avito Account'                                                      => 'Подключить аккаунт Авито',
@@ -46,6 +47,7 @@ module AvitoChannel
         'These keys belong to another Avito account. Connect it as a new account.' =>
                                                                                     'Эти ключи от другого аккаунта Авито. Подключите его как новый аккаунт.',
         'Listing'                                                                => 'Объявление',
+        'Price'                                                                  => 'Цена',
         'Shop'                                                                   => 'Магазин',
         'Without a listing (chat with the profile)'                              => 'Без объявления (чат по профилю)',
         'Open the chat in Avito'                                                 => 'Открыть чат в Авито',

@@ -144,6 +144,43 @@ RSpec.describe 'Avito replies', :aggregate_failures do
       expect(ticket.reload.articles.last.body).to include('Unable to send Avito message')
     end
 
+    it 'says how much of a long reply went out when a later message fails' do
+      stub_request(:post, send_url).to_return(
+        { status: 200, body: { id: 'a1', created: Time.zone.now.to_i, direction: 'out', type: 'text', content: { text: 'x' } }.to_json,
+          headers: { 'Content-Type' => 'application/json' } },
+        { status: 402, body: { error: { code: 402, message: 'Перейдите на подписку с API мессенджера' } }.to_json },
+      )
+      article = reply(body: "#{'Первый абзац. ' * 50}\n\n#{'Второй абзац. ' * 50}")
+
+      described_class.perform_now(article.id)
+
+      expect(article.reload.preferences['delivery_status_message']).to start_with('Sent 1 of 2 messages; ')
+      expect(ticket.reload.articles.last.body).to start_with('Unable to send Avito message: Sent 1 of 2 messages; ')
+    end
+
+    it 'says nothing of parts when nothing went out' do
+      stub_request(:post, send_url).to_return(status: 500, body: { message: 'internal error' }.to_json)
+      article = reply(body: "#{'Первый абзац. ' * 50}\n\n#{'Второй абзац. ' * 50}")
+
+      described_class.perform_now(article.id)
+
+      expect(article.reload.preferences['delivery_status_message']).not_to include('Sent')
+    end
+
+    it 'reports in the system language' do
+      Setting.set('locale_default', 'ru')
+      stub_request(:post, send_url).to_return(
+        { status: 200, body: { id: 'a1', created: Time.zone.now.to_i, direction: 'out', type: 'text', content: { text: 'x' } }.to_json,
+          headers: { 'Content-Type' => 'application/json' } },
+        { status: 402, body: { error: { code: 402, message: 'Перейдите на подписку с API мессенджера' } }.to_json },
+      )
+      article = reply(body: "#{'Первый абзац. ' * 50}\n\n#{'Второй абзац. ' * 50}")
+
+      described_class.perform_now(article.id)
+
+      expect(ticket.reload.articles.last.body).to start_with('Не удалось отправить сообщение в Авито: Отправлено 1 из 2 сообщений; ')
+    end
+
     it 'retries a failure that may pass' do
       stub_request(:post, send_url).to_return(status: 500, body: { message: 'internal error' }.to_json)
       article = reply

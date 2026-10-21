@@ -39,9 +39,13 @@ class CommunicateAvitoJob < ApplicationJob
 
   private
 
+  # A reply cut into several Avito messages can fail after some of them went out: the status and the note say
+  # how many, so the agent knows the customer has already read part of it.
   def fail!(article, message, final:)
     message = message.to_s.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
-    article.reload.preferences['delivery_status'] = 'fail'
+    article.reload
+    message = partial_message(article, message)
+    article.preferences['delivery_status'] = 'fail'
     article.preferences['delivery_status_message'] = message
     article.preferences['delivery_status_date']    = Time.zone.now
     article.save!
@@ -52,7 +56,7 @@ class CommunicateAvitoJob < ApplicationJob
     Ticket::Article.create!(
       ticket_id:     article.ticket_id,
       content_type:  'text/plain',
-      body:          "Unable to send Avito message: #{message}",
+      body:          translate(__('Unable to send Avito message: %s'), message),
       internal:      true,
       sender:        Ticket::Article::Sender.find_by(name: 'System'),
       type:          Ticket::Article::Type.find_by(name: 'note'),
@@ -63,5 +67,17 @@ class CommunicateAvitoJob < ApplicationJob
       updated_by_id: 1,
       created_by_id: 1,
     )
+  end
+
+  def partial_message(article, message)
+    pieces = article.preferences.dig('avito', 'pieces') || []
+    sent   = pieces.count { |piece| piece['message_id'].present? }
+    return message if sent.zero? || sent == pieces.size
+
+    translate(__('Sent %s of %s messages; %s'), sent, pieces.size, message)
+  end
+
+  def translate(source, *)
+    Translation.translate(Setting.get('locale_default') || 'en-us', source, *)
   end
 end

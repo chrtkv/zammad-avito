@@ -53,6 +53,8 @@ module AvitoChannel
         'Avito does not give out this chat through the API. Read and reply in Avito.' =>
                                                                                     'Авито не отдаёт этот чат через API. Читайте и отвечайте в Авито.',
         # Texts written into tickets
+        'Unable to send Avito message: %s'                                       => 'Не удалось отправить сообщение в Авито: %s',
+        'Sent %s of %s messages; %s'                                             => 'Отправлено %s из %s сообщений; %s',
         'Image'                                                                  => 'Изображение',
         'Voice message'                                                          => 'Голосовое сообщение',
         'Missed call'                                                            => 'Пропущенный звонок',

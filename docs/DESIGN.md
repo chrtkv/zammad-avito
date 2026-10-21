@@ -44,6 +44,8 @@ options:
   name:    account name, for display
   callback_token: random secret, part of the webhook URL
   sync:    { backfill_days, poll_interval }
+  ticket_title: title template, {listing} — {buyer} when empty
+  ticket_tag:   tag for new tickets (the account's name in Latin letters), none when off
 preferences:
   last_fetch, avito_cursor (the latest chat change handled, see below)
   avito_webhook_at: when Avito last delivered to the webhook (saved at most once a minute)
@@ -130,7 +132,7 @@ The admin page can also act on an account outside the schedule:
 | `voice` | attachment via `getVoiceFiles` |
 | `item`, `link`, `location` | rendered as text (title, URL, price / address) |
 | `call` (missed) | short text "missed call" |
-| `system` | internal note (Avito's own notices, bots) |
+| `system` | internal note (Avito's own notices, bots) by the "Avito" user; a note, not an `avito message`: Zammad shows an article from System of any other type as a one-line `"subject" -> "to"` record and hides its text |
 | `deleted` | internal note on the ticket; the original article stays |
 | `file`, `video`, `appCall` | Avito sends no content: a placeholder text naming the type |
 
@@ -146,7 +148,13 @@ The admin page can also act on an account outside the schedule:
 - Customer: a Zammad user per Avito user id (login `avito.<id>`), named from the chat's `users[].name`. Avito
   gives no phone or e-mail. Avito notes that user ids are hashed; whether they are stable across our accounts
   is unverified, so a buyer writing to two accounts may become two users.
-- The item (listing) a chat is about goes into the ticket title and preferences.
+- The item (listing) a chat is about goes into the ticket preferences, and into the title through the account's
+  template: `{listing}`, `{buyer}`, `{account}`, by default `{listing} — {buyer}`, so chats about one listing are
+  told apart in the ticket list. An account can also tag its new tickets with its name in Latin letters.
+- The reply form knows a ticket from Avito by its chat (`preferences.avito.chat_id`), not by its first article's
+  type: a chat can open with Avito's notice, an internal note.
+- Avito's own notices are created by one user "Avito" (login `avito.system`, inactive), neither the shop nor
+  Zammad.
 - Messages written in Avito itself are created by a service user of the account (login
   `avito.account.<user_id>`, inactive, named after the shop), not by Zammad's system user, so they show with
   the shop's Avito avatar. Customers get the avatar of their Avito profile when they are created.

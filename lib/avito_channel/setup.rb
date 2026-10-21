@@ -30,6 +30,10 @@ module AvitoChannel
         'Import history (days)'                                                  => 'Загрузить историю (дней)',
         'On connecting, messages of this many past days are imported. 0 starts with new messages only.' =>
                                                                                     'При подключении загружаются сообщения за столько последних дней. 0 — только новые.',
+        'Ticket title'                                                           => 'Тема тикета',
+        "For new tickets: {listing} is the listing, {buyer} the buyer's name, {account} this account. Empty means \"{listing} — {buyer}\"." =>
+                                                                                    'Для новых тикетов: {listing} — объявление, {buyer} — имя покупателя, {account} — этот аккаунт. Пусто — «{listing} — {buyer}».',
+        'Tag new tickets with the account'                                       => 'Ставить новым тикетам тег аккаунта',
         'Mark the chat read in Avito when an agent replies'                      => 'Отмечать чат в Авито прочитанным, когда агент отвечает',
         'Public URL for the webhook'                                             => 'Публичный адрес для вебхука',
         "Leave empty to use this system's address. Avito must be able to reach it." =>

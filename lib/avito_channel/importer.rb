@@ -7,6 +7,7 @@ module AvitoChannel
     # State types, not names: an admin's own closing state ("Resolved", say) is still of type closed.
     CLOSED_STATE_TYPES = %w[closed merged removed].freeze
     TITLE_LENGTH  = 60
+    TITLE_EDGES   = %r{\A[\s\-–—:|/,.]+|[\s\-–—:|/,.]+\z}
     ECHO_LOOKBACK = 30.minutes
 
     SENDERS = { customer: 'Customer', own: 'Agent', system: 'System' }.freeze
@@ -240,9 +241,9 @@ module AvitoChannel
     def create_ticket(message, customer)
       item = chat_item(chat(message))
 
-      Ticket.create!(
+      ticket = Ticket.create!(
         group_id:    channel.group_id,
-        title:       ticket_title(message, item),
+        title:       ticket_title(message, item, customer),
         state_id:    Ticket::State.find_by(default_create: true).id,
         priority_id: Ticket::Priority.find_by(default_create: true).id,
         customer_id: customer.id,
@@ -261,27 +262,39 @@ module AvitoChannel
           }.compact,
         },
       )
+      # The account's tag (Account.tag), when it is to tag its tickets.
+      ticket.tag_add(channel.options[:ticket_tag], 1) if channel.options[:ticket_tag].present?
+      ticket
     end
 
-
-    def ticket_title(message, item)
-      title = item['title'].presence || message.render_text(AvitoChannel.labels).presence || '-'
-      title = title.squish
-      title.length > TITLE_LENGTH ? "#{title[0, TITLE_LENGTH]}..." : title
+    # The account's title template (Account::TITLE_TEMPLATE) filled in: {listing} is the listing, or the first
+    # message of a chat about none; {buyer} the customer; {account} the account. Separators left dangling by an
+    # empty part go.
+    def ticket_title(message, item, customer)
+      listing = (item['title'].presence || message.render_text(AvitoChannel.labels).presence || '-').squish
+      listing = "#{listing[0, TITLE_LENGTH]}..." if listing.length > TITLE_LENGTH
+      parts   = { 'listing' => listing, 'buyer' => customer&.fullname.to_s.squish, 'account' => account_name }
+      title   = Account.title_template(channel).gsub(%r{\{(listing|buyer|account)\}}) { parts[Regexp.last_match(1)] }
+      title   = title.squish.gsub(TITLE_EDGES, '')
+      title.presence || listing
     end
 
     # -- article --------------------------------------------------------------------------------------------
 
+    # Avito's own notices become internal notes: Zammad shows an article from System of any other type as a
+    # one-line "subject -> to" record and hides its text (it did, for "the user opened a chat but wrote
+    # nothing", review 2026-10-22).
     def create_article(message, ticket, customer)
       from_customer = message.origin == :customer
+      notice        = message.origin == :system
       creator_id    = article_author_id(message, customer)
       UserInfo.current_user_id = creator_id
 
       article = Ticket::Article.create!(
         ticket_id:     ticket.id,
-        type_id:       AvitoChannel.article_type.id,
+        type_id:       notice ? Ticket::Article::Type.lookup(name: 'note').id : AvitoChannel.article_type.id,
         sender_id:     Ticket::Article::Sender.lookup(name: SENDERS.fetch(message.origin)).id,
-        from:          from_customer ? customer.fullname : account_name,
+        from:          from_customer ? customer.fullname : sender_name(message),
         to:            from_customer ? account_name : customer.fullname,
         message_id:    AvitoChannel.message_id(user_id, message.chat_id, message.id),
         internal:      message.origin == :system || message.type == 'deleted',
@@ -303,17 +316,21 @@ module AvitoChannel
       )
 
       # Zammad names the sender of an agent article after its author, which for an import is the system user.
-      article.update!(from: account_name) if !from_customer && article.from != account_name
+      article.update!(from: sender_name(message)) if !from_customer && article.from != sender_name(message)
       article
     end
 
+    def sender_name(message)
+      message.origin == :system ? ServiceUser.avito.fullname : account_name
+    end
+
     # Customers write their own messages; messages written in Avito itself go under the account's service
-    # user; Avito's notices under Zammad's system user.
+    # user; Avito's notices under the "Avito" user (ServiceUser.avito).
     def article_author_id(message, customer)
       case message.origin
       when :customer then customer.id
       when :own      then ServiceUser.for(channel, chat_user(message, user_id)).id
-      else 1
+      else ServiceUser.avito.id
       end
     end
 

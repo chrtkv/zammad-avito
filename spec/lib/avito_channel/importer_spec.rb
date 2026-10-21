@@ -32,9 +32,9 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
       expect(Authorization.find_by(provider: 'avito', uid: buyer.to_s).user_id).to eq(customer.id)
     end
 
-    it 'opens a ticket named after the listing, in the account\'s group' do
+    it 'opens a ticket named after the listing and the buyer, in the account\'s group' do
       ticket = article.ticket
-      expect(ticket).to have_attributes(title: 'Горный велосипед, 29 дюймов', group_id: channel.group_id)
+      expect(ticket).to have_attributes(title: 'Горный велосипед, 29 дюймов — Иван', group_id: channel.group_id)
       expect(ticket.state.name).to eq('new')
       expect(ticket.preferences[:channel_id]).to eq(channel.id)
       expect(ticket.preferences[:avito]).to include(
@@ -192,11 +192,52 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
     end
   end
 
+  describe 'the ticket\'s title and tag' do
+    def title_of(**options)
+      channel.options.merge!(options)
+      channel.save!
+      import(avito_message(id: "t-#{options.hash.abs}")).ticket
+    end
+
+    it 'follows the account\'s template' do
+      expect(title_of(ticket_title: '{account}: {listing} ({buyer})').title).to eq('Demo Shop: Горный велосипед, 29 дюймов (Иван)')
+    end
+
+    it 'drops a separator the template leaves at an end' do
+      expect(title_of(ticket_title: '— {listing} | ').title).to eq('Горный велосипед, 29 дюймов')
+    end
+
+    it 'is the listing alone when asked so' do
+      expect(title_of(ticket_title: '{listing}').title).to eq('Горный велосипед, 29 дюймов')
+    end
+
+    it 'carries the account\'s tag when the account tags its tickets' do
+      expect(title_of(ticket_tag: 'demo-shop').tag_list).to eq(['demo-shop'])
+    end
+
+    it 'carries no tag otherwise' do
+      expect(title_of.tag_list).to be_empty
+    end
+  end
+
   describe 'other message types' do
-    it 'keeps Avito\'s own notices as internal system notes' do
+    # Review, 2026-10-22: as "avito message" articles from System, Zammad showed them as '"" -> "Иван"' and hid
+    # the text.
+    it 'keeps Avito\'s own notices as internal notes written by the "Avito" user' do
       article = import(avito_message(id: 's1', type: 'system', author_id: 0, text: 'Покупатель оформил доставку'))
+
+      expect(article).to have_attributes(internal: true, body: include('Покупатель оформил доставку'), from: 'Avito')
+      expect(article.type.name).to eq('note')
       expect(article.sender.name).to eq('System')
-      expect(article.internal).to be(true)
+      expect(article.created_by).to have_attributes(login: 'avito.system', firstname: 'Avito', active: false)
+      expect(AvitoMessageRef.known?(channel, 's1')).to be(true)
+    end
+
+    it 'opens a ticket the reply form still knows as Avito\'s when the chat starts with a notice' do
+      ticket = import(avito_message(id: 's1', type: 'system', author_id: 0, text: 'Пользователь создал чат')).ticket
+
+      expect(ticket.create_article_type.name).to eq('note')
+      expect(ticket.preferences.dig(:avito, :chat_id)).to eq('chat-1')
     end
 
     it 'stores the largest size of an image' do

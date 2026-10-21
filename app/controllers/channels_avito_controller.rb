@@ -107,7 +107,7 @@ class ChannelsAvitoController < ApplicationController
 
   def save_account(channel)
     AvitoChannel::Account.save!(params.permit(:client_id, :client_secret, :group_id, :backfill_days, :poll_interval,
-                                              :mark_read, :webhook_base_url), channel)
+                                              :mark_read, :webhook_base_url, :ticket_title, :tag_tickets), channel)
   rescue AvitoChannel::Account::Invalid => e
     raise Exceptions::UnprocessableContent, e.message
   end

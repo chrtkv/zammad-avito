@@ -6,11 +6,24 @@ module AvitoChannel
 
     WEBHOOK_PATH = '/api/v1/channels_avito_webhook'.freeze
 
+    # How a new ticket is titled: {listing}, {buyer} and {account} filled in (Importer#ticket_title).
+    TITLE_TEMPLATE = '{listing} — {buyer}'.freeze
+    TITLE_TEMPLATE_LENGTH = 100
+
+    # Russian letters in a tag (Account.tag): a tag is typed by hand in Zammad's search and filters.
+    TRANSLIT = {
+      'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'e', 'ж' => 'zh', 'з' => 'z',
+      'и' => 'i', 'й' => 'y', 'к' => 'k', 'л' => 'l', 'м' => 'm', 'н' => 'n', 'о' => 'o', 'п' => 'p', 'р' => 'r',
+      'с' => 's', 'т' => 't', 'у' => 'u', 'ф' => 'f', 'х' => 'kh', 'ц' => 'ts', 'ч' => 'ch', 'ш' => 'sh', 'щ' => 'shch',
+      'ъ' => '', 'ы' => 'y', 'ь' => '', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya'
+    }.freeze
+
     # How stale the "last webhook delivery" time may get: the channel is saved for a delivery only once this
     # has passed since the time it holds, not for every message.
     WEBHOOK_NOTE_INTERVAL = 1.minute
 
-    # params: client_id, client_secret, group_id, backfill_days, poll_interval, mark_read, webhook_base_url.
+    # params: client_id, client_secret, group_id, backfill_days, poll_interval, mark_read, webhook_base_url,
+    # ticket_title (a template, see TITLE_TEMPLATE), tag_tickets (tag new tickets with the account's tag).
     # A blank or masked client_secret keeps the stored one. Returns the saved channel.
     def self.save!(params, channel = nil, transport: AvitoMessenger::Transport.new)
       params = params.to_h.with_indifferent_access
@@ -51,6 +64,8 @@ module AvitoChannel
         callback_token:   channel.options&.dig(:callback_token).presence || SecureRandom.urlsafe_base64(24),
         webhook_base_url: params.key?(:webhook_base_url) ? params[:webhook_base_url].presence : channel.options&.dig(:webhook_base_url),
         mark_read:        params.key?(:mark_read) ? ActiveModel::Type::Boolean.new.cast(params[:mark_read]) != false : channel.options&.dig(:mark_read) != false,
+        ticket_title:     title_param(params, channel),
+        ticket_tag:       tag_param(params, channel, account['name'].presence || "Avito #{user_id}", user_id),
         sync:             {
           backfill_days: integer_param(params, :backfill_days, channel&.options&.dig(:sync, :backfill_days)) || 0,
           poll_interval: integer_param(params, :poll_interval, channel&.options&.dig(:sync, :poll_interval)) || POLL_INTERVAL,
@@ -192,12 +207,40 @@ module AvitoChannel
       raise Invalid, "#{key} must be a number"
     end
 
+    def self.title_template(channel)
+      channel.options[:ticket_title].presence || TITLE_TEMPLATE
+    end
+
+    # A tag for the account: its name in lower case, Russian letters spelled in Latin ones, words joined by "-";
+    # avito-<id> for a name that leaves nothing.
+    def self.tag(name, user_id)
+      slug = name.to_s.downcase.chars.map { |char| TRANSLIT.fetch(char, char) }.join.parameterize
+      slug.presence || "avito-#{user_id}"
+    end
+
+    def self.title_param(params, channel)
+      return channel&.options&.dig(:ticket_title) if !params.key?(:ticket_title)
+
+      value = params[:ticket_title].to_s.squish
+      raise Invalid, "ticket_title is longer than #{TITLE_TEMPLATE_LENGTH} characters" if value.length > TITLE_TEMPLATE_LENGTH
+
+      value.presence
+    end
+
+    # The tag stays as it was first made while tagging is on, even if the account is renamed: tickets keep one tag.
+    def self.tag_param(params, channel, name, user_id)
+      on = params.key?(:tag_tickets) ? ActiveModel::Type::Boolean.new.cast(params[:tag_tickets]) == true : channel&.options&.dig(:ticket_tag).present?
+      return nil if !on
+
+      channel&.options&.dig(:ticket_tag).presence || tag(name, user_id)
+    end
+
     def self.store_webhook(channel, webhook)
       channel.reload
       channel.options[:webhook] = webhook
       channel.save!
     end
 
-    private_class_method :check_status, :fetch_account, :duplicate?, :integer_param, :store_webhook
+    private_class_method :check_status, :fetch_account, :duplicate?, :integer_param, :title_param, :tag_param, :store_webhook
   end
 end

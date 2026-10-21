@@ -223,6 +223,7 @@ class ChannelAvitoAccount extends App.ControllerModal
 
     params = @formParams()
     params.mark_read = !!params.mark_read
+    params.tag_tickets = !!params.tag_tickets
 
     @formDisable(e)
     @ajax(

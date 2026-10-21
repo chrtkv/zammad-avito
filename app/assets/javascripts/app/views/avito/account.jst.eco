@@ -46,6 +46,25 @@
     </div>
     <p class="help-text"><%- @T('Messages arrive through the webhook at once; this check picks up what it missed and messages written in Avito itself.') %></p>
   </div>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_ticket_title"><%- @T('Ticket title') %></label>
+    </div>
+    <div class="controls">
+      <input id="avito_ticket_title" type="text" maxlength="100" name="ticket_title" value="<%= @options.ticket_title %>" placeholder="{listing} — {buyer}" class="form-control" autocomplete="off">
+    </div>
+    <p class="help-text"><%- @T('For new tickets: {listing} is the listing, {buyer} the buyer\'s name, {account} this account. Empty means "{listing} — {buyer}".') %></p>
+  </div>
+  <div class="form-group">
+    <div class="checkbox checkbox--list">
+      <label class="checkbox-replacement">
+        <input type="checkbox" name="tag_tickets" value="true" <% if @options.ticket_tag: %>checked<% end %>>
+        <%- @Icon('checkbox', 'icon-unchecked') %>
+        <%- @Icon('checkbox-checked', 'icon-checked') %>
+        <span class="label-text"><%- @T('Tag new tickets with the account') %><% if @options.ticket_tag: %> (<code><%= @options.ticket_tag %></code>)<% end %></span>
+      </label>
+    </div>
+  </div>
   <div class="form-group">
     <div class="checkbox checkbox--list">
       <label class="checkbox-replacement">

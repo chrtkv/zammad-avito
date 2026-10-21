@@ -129,6 +129,26 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
         expect(json_response.dig('options', 'webhook', 'error')).to include('подписку с API мессенджера')
       end
 
+      it 'stores a title template and the account\'s tag, spelled in Latin letters' do
+        stub_avito(:get, '/core/v1/accounts/self', body: { id: 777, name: 'Игровой Магазин №1' })
+
+        post '/api/v1/channels_avito', params: params.merge(ticket_title: '{account}: {listing}', tag_tickets: true), as: :json
+
+        expect(Channel.find(json_response['id']).options).to include('ticket_title' => '{account}: {listing}', 'ticket_tag' => 'igrovoy-magazin-1')
+      end
+
+      it 'tags nothing and keeps the default title unless asked' do
+        post '/api/v1/channels_avito', params: params, as: :json
+
+        options = Channel.find(json_response['id']).options
+        expect([options['ticket_title'], options['ticket_tag']]).to eq([nil, nil])
+      end
+
+      it 'refuses a title template that is too long' do
+        post '/api/v1/channels_avito', params: params.merge(ticket_title: 'x' * 101), as: :json
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+
       it 'refuses credentials Avito rejects' do
         stub_avito(:post, '/token', body: { error: 'invalid_client', error_description: 'bad secret' })
 

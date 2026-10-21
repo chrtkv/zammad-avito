@@ -36,8 +36,12 @@ class AvitoReply
 
     true
 
+  # By the Avito chat the ticket belongs to, not by its first article's type: a chat can open with Avito's own
+  # notice, which is an internal note.
   @fromAvito: (ticket) ->
-    return false if !ticket || !ticket.create_article_type_id
+    return false if !ticket
+    return true if ticket.preferences?.avito?.chat_id
+    return false if !ticket.create_article_type_id
     App.TicketArticleType.find(ticket.create_article_type_id)?.name is AvitoReply.TYPE
 
   @articleTypes: (articleTypes, ticket, ui) ->

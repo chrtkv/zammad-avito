@@ -14,8 +14,9 @@ webhook has not run against Avito yet.** Target: Zammad 7.2, legacy (CoffeeScrip
   and polling. Adding, disabling or deleting one leaves the others alone. A disabled account is off both
   ways: no import, and replies from its tickets fail with "account is disabled" instead of going out.
 - **Incoming**: Avito's webhook for speed, plus a poll every few minutes for whatever the webhook missed. One
-  ticket per chat, titled after the listing; the buyer becomes a customer. Images and voice messages arrive as
-  attachments.
+  ticket per chat, titled after the listing and the buyer (a template per account, optionally tagged with the
+  account); the buyer becomes a customer. Images and voice messages arrive as attachments; Avito's own notices
+  as internal notes by an "Avito" user.
 - **Messages written in Avito itself** (the website, the app, autoresponders) are added to the ticket as agent
   replies marked as coming from Avito, and never sent back. They are filed under a service user per account,
   named after the shop and wearing its Avito avatar; customers get their Avito avatars too.

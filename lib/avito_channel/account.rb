@@ -6,6 +6,10 @@ module AvitoChannel
 
     WEBHOOK_PATH = '/api/v1/channels_avito_webhook'.freeze
 
+    # How stale the "last webhook delivery" time may get: the channel is saved for a delivery only once this
+    # has passed since the time it holds, not for every message.
+    WEBHOOK_NOTE_INTERVAL = 1.minute
+
     # params: client_id, client_secret, group_id, backfill_days, poll_interval, mark_read, webhook_base_url.
     # A blank or masked client_secret keeps the stored one. Returns the saved channel.
     def self.save!(params, channel = nil, transport: AvitoMessenger::Transport.new)
@@ -109,6 +113,51 @@ module AvitoChannel
       channel.destroy!
     end
 
+    # "Check connection" on the admin page: a new token, the account, one chat, and the webhook subscriptions
+    # Avito holds, in that order; the first failure says what is wrong. Four requests that change nothing.
+    #
+    # { 'status' => 'ok' | 'auth' | 'subscription' | 'rate_limited' | 'network' | 'other_account' | 'error',
+    #   'message' => Avito's own words,
+    #   'account' => name, 'subscriptions' => [url], 'subscribed' => whether Avito has this channel's URL }
+    def self.check(channel, transport: AvitoMessenger::Transport.new)
+      user_id = channel.options[:user_id]
+      client  = AvitoChannel.client(channel, transport:)
+      client.refresh_token!
+      account = client.account
+      if account['id'].to_s != user_id.to_s
+        return { 'status' => 'other_account', 'message' => "Avito account #{account['id']}" }
+      end
+
+      client.chats(user_id, limit: 1)
+      urls = client.subscriptions.filter_map { |subscription| subscription['url'].presence }
+      { 'status' => 'ok', 'account' => account['name'], 'subscriptions' => urls, 'subscribed' => urls.include?(webhook_url(channel)) }
+    rescue AvitoMessenger::Error => e
+      { 'status' => check_status(e), 'message' => e.message }
+    ensure
+      transport.finish
+    end
+
+    # Avito delivered to the channel's webhook (a probe or a message): the time is kept for the admin page.
+    def self.note_webhook(channel, now: Time.zone.now)
+      last = channel.preferences[:avito_webhook_at]
+      return if last.present? && Time.zone.parse(last.to_s) > now - WEBHOOK_NOTE_INTERVAL
+
+      channel.reload
+      channel.preferences[:avito_webhook_at] = now.iso8601
+      AuditLog.suspend { channel.save! }
+    end
+
+    def self.check_status(error)
+      case error
+      when AvitoMessenger::Error::Auth                 then 'auth'
+      when AvitoMessenger::Error::SubscriptionRequired then 'subscription'
+      when AvitoMessenger::Error::RateLimited          then 'rate_limited'
+      when AvitoMessenger::Error::Network              then 'network'
+      when AvitoMessenger::Error::Api                  then [401, 403].include?(error.status) ? 'auth' : 'error'
+      else 'error'
+      end
+    end
+
     def self.fetch_account(client)
       client.account
     rescue AvitoMessenger::Error::Auth => e
@@ -135,6 +184,6 @@ module AvitoChannel
       channel.save!
     end
 
-    private_class_method :fetch_account, :duplicate?, :integer_param, :store_webhook
+    private_class_method :check_status, :fetch_account, :duplicate?, :integer_param, :store_webhook
   end
 end

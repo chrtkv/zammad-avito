@@ -20,8 +20,12 @@ webhook has not run against Avito yet.** Target: Zammad 7.2, legacy (CoffeeScrip
   replies marked as coming from Avito, and never sent back. They are filed under a service user per account,
   named after the shop and wearing its Avito avatar; customers get their Avito avatars too.
 - **Replies**: the "reply" action on an Avito message; long replies go out as several 1000-character
-  messages, images as images. Other attachments are refused with a clear delivery error, before anything
-  is sent.
+  messages, images as images. The reply form refuses other attachments before the reply is saved (delivery
+  refuses them too, before anything is sent). A reply that fails part-way says how many of its messages went
+  out.
+- **Admin page**: per account, the webhook's last delivery, "Check connection" (keys, subscription, webhook
+  subscriptions at Avito), "Sync now", and "Load history" of past days, paced so Avito does not throttle the
+  server. Avito gives out only the latest ~1100 chats of an account and ~1100 messages of each.
 
 ## Requirements
 

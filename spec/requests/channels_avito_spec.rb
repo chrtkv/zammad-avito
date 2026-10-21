@@ -59,6 +59,26 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
       expect(response).to have_http_status(:ok)
     end
 
+    it 'notes when Avito last delivered, saving the channel at most once a minute' do
+      freeze_time do
+        deliver({})
+        expect(channel.reload.preferences[:avito_webhook_at]).to eq(Time.zone.now.iso8601)
+
+        travel 30.seconds
+        expect { deliver(avito_webhook_body(avito_message(id: 'm1'))) }.not_to change { channel.reload.updated_at }
+
+        travel 31.seconds
+        deliver(avito_webhook_body(avito_message(id: 'm2')))
+        expect(channel.reload.preferences[:avito_webhook_at]).to eq(Time.zone.now.iso8601)
+      end
+    end
+
+    it 'notes nothing for an unknown callback token' do
+      channel
+      deliver({}, token: 'wrong')
+      expect(channel.reload.preferences[:avito_webhook_at]).to be_nil
+    end
+
     it 'refuses a body that is not a delivery' do
       deliver({ 'payload' => 'nonsense' })
       expect(response).to have_http_status(:unprocessable_entity)
@@ -183,6 +203,101 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
           .to eq("https://hd.example.com/api/v1/channels_avito_webhook/#{channel.options[:callback_token]}")
         expect(json_response.dig('assets', 'Channel', channel.id.to_s, 'options', 'auth', 'client_secret'))
           .to eq(SensitiveParamsHelper::SENSITIVE_MASK)
+      end
+    end
+
+    describe 'POST /api/v1/channels_avito/:id/check' do
+      let(:url) { "https://hd.example.com/api/v1/channels_avito_webhook/#{channel.options[:callback_token]}" }
+
+      before do
+        stub_avito(:post, '/token', body: { access_token: 'checked', expires_in: 86_400 })
+        stub_avito(:get, '/core/v1/accounts/self', body: { id: AvitoChannelSpecHelpers::AVITO_USER_ID, name: 'Demo Shop' })
+        stub_avito(:get, "/messenger/v2/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats", body: { chats: [] })
+        stub_avito(:post, '/messenger/v1/subscriptions', body: { subscriptions: [{ url: url, version: '3' }] })
+      end
+
+      it 'reports a working account with the webhook subscriptions Avito holds' do
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(json_response).to eq('status' => 'ok', 'account' => 'Demo Shop', 'subscriptions' => [url], 'subscribed' => true)
+        expect(a_request(:post, 'https://api.avito.ru/token')).to have_been_made
+        expect(a_request(:get, %r{/chats\?.*limit=1})).to have_been_made
+        expect(channel.reload.options.dig(:auth, :access_token)).to eq('checked')
+      end
+
+      it 'says when Avito has no subscription for this webhook' do
+        stub_avito(:post, '/messenger/v1/subscriptions', body: { subscriptions: [{ url: 'https://elsewhere.example/hook', version: '3' }] })
+
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'ok', 'subscribed' => false, 'subscriptions' => ['https://elsewhere.example/hook'])
+      end
+
+      it 'tells refused keys, a missing subscription and an unreachable Avito apart' do
+        stub_avito(:post, '/token', body: { error: 'invalid_client', error_description: 'bad secret' })
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'auth', 'message' => include('bad secret'))
+
+        stub_avito(:post, '/token', body: { access_token: 'checked', expires_in: 86_400 })
+        stub_avito(:get, "/messenger/v2/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats", status: 402,
+                                                                                                    body: { error: { code: 402, message: 'Перейдите на подписку с API мессенджера' } })
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'subscription', 'message' => include('подписку'))
+
+        stub_request(:post, 'https://api.avito.ru/token').to_raise(Errno::ECONNREFUSED)
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'network')
+      end
+
+      it 'says when the keys now open another account' do
+        stub_avito(:get, '/core/v1/accounts/self', body: { id: 1, name: 'Someone else' })
+
+        post "/api/v1/channels_avito/#{channel.id}/check", as: :json
+        expect(json_response).to include('status' => 'other_account')
+      end
+    end
+
+    describe 'POST /api/v1/channels_avito/:id/sync', performs_jobs: true do
+      it 'queues a poll of the account at once' do
+        expect { post "/api/v1/channels_avito/#{channel.id}/sync", as: :json }
+          .to have_enqueued_job(AvitoSyncJob).with(channel.id)
+        expect(response).to have_http_status(:ok)
+      end
+
+      it 'refuses a disabled account' do
+        channel.update!(active: false)
+
+        expect { post "/api/v1/channels_avito/#{channel.id}/sync", as: :json }.not_to have_enqueued_job(AvitoSyncJob)
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+
+      it 'polls whatever the poll interval says' do
+        channel.update!(preferences: { last_fetch: 10.seconds.ago, avito_cursor: 10.minutes.ago.to_i })
+        stub_avito(:get, "/messenger/v2/accounts/#{AvitoChannelSpecHelpers::AVITO_USER_ID}/chats", body: { chats: [] })
+
+        AvitoSyncJob.perform_now(channel.id)
+
+        expect(a_request(:get, %r{/chats})).to have_been_made
+        expect(channel.reload).to have_attributes(status_in: 'ok', last_log_in: '0 messages from 0 chats')
+      end
+    end
+
+    describe 'POST /api/v1/channels_avito/:id/history', performs_jobs: true do
+      before { Rails.cache.delete("avito-history-#{channel.id}") }
+
+      it 'starts loading the history of past days and shows its progress in the list' do
+        expect { post "/api/v1/channels_avito/#{channel.id}/history", params: { days: 14 }, as: :json }
+          .to have_enqueued_job(AvitoHistoryJob)
+        expect(json_response).to include('days' => 14, 'phase' => 'walk')
+
+        get '/api/v1/channels_avito', as: :json
+        expect(json_response.dig('history', channel.id.to_s)).to include('days' => 14)
+      end
+
+      it 'refuses a number of days out of range' do
+        post "/api/v1/channels_avito/#{channel.id}/history", params: { days: 0 }, as: :json
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response['error']).to include('from 1 to 365')
       end
     end
 

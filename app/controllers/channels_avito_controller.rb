@@ -13,6 +13,7 @@ class ChannelsAvitoController < ApplicationController
       assets:       assets,
       channel_ids:  channels.map(&:id),
       webhook_urls: channels.to_h { |channel| [channel.id, AvitoChannel::Account.webhook_url(channel)] },
+      history:      channels.to_h { |channel| [channel.id, AvitoChannel::History.state(channel)] },
     }
   end
 
@@ -44,6 +45,21 @@ class ChannelsAvitoController < ApplicationController
     render json: {}
   end
 
+  def check
+    render json: AvitoChannel::Account.check(find_channel)
+  end
+
+  def sync
+    AvitoSyncJob.perform_later(find_active_channel.id)
+    render json: {}
+  end
+
+  def history
+    render json: AvitoChannel::History.start!(find_active_channel, days: params[:days])
+  rescue AvitoChannel::History::Invalid => e
+    raise Exceptions::UnprocessableContent, e.message
+  end
+
   def destroy
     AvitoChannel::Account.destroy!(find_channel)
     render json: {}
@@ -54,6 +70,7 @@ class ChannelsAvitoController < ApplicationController
     channel = AvitoChannel::Account.by_callback_token(params[:callback_token])
     raise ActiveRecord::RecordNotFound, 'unknown Avito webhook' if !channel
 
+    AvitoChannel::Account.note_webhook(channel)
     body = parse_body
     return render(json: {}, status: :ok) if AvitoMessenger::WebhookEvent.probe?(body) || !channel.active
 
@@ -74,6 +91,13 @@ class ChannelsAvitoController < ApplicationController
 
   def find_channel
     Channel.find_by!(id: params[:id], area: AvitoChannel::AREA)
+  end
+
+  def find_active_channel
+    channel = find_channel
+    raise Exceptions::UnprocessableContent, __('The Avito account is disabled.') if !channel.active
+
+    channel
   end
 
   def save_account(channel)

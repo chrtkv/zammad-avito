@@ -15,10 +15,12 @@ module AvitoChannel
 
     attr_reader :channel
 
-    def initialize(channel, client: nil, transport: AvitoMessenger::Transport.new)
+    # history: the messages are a history load's (Sync#history), see #late?.
+    def initialize(channel, client: nil, transport: AvitoMessenger::Transport.new, history: false)
       @channel   = channel
       @transport = transport
       @client    = client || AvitoChannel.client(channel, transport:)
+      @history   = history
       @chats     = {}
     end
 
@@ -200,13 +202,23 @@ module AvitoChannel
       tickets = chat_tickets(message, customer)
       open    = tickets.find { |ticket| CLOSED_STATE_TYPES.exclude?(ticket.state.state_type.name) }
 
-      if message.origin == :customer
+      if message.origin == :customer && !late?(message, tickets)
         return follow_up(open) if open
 
         return create_ticket(message, customer)
       end
 
       open || tickets.first || create_ticket(message, customer)
+    end
+
+    # A message a history load brings that is older than what the chat's tickets hold already is filed with
+    # them as it is, like one from our side: it neither reopens a ticket nor starts a new one. A newer one is
+    # a message the webhook and the poll missed, and counts as usual.
+    def late?(message, tickets)
+      return false if !@history || tickets.empty? || message.created_at.nil?
+
+      latest = Ticket::Article.where(ticket_id: tickets.map(&:id)).maximum(:created_at)
+      latest.present? && message.created_at < latest
     end
 
     # The chat's tickets, newest first, found through its recorded messages: an agent may have corrected the

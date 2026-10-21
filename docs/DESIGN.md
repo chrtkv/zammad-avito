@@ -45,7 +45,8 @@ options:
   callback_token: random secret, part of the webhook URL
   sync:    { backfill_days, poll_interval }
 preferences:
-  last_fetch, chats_cursor (max chat.updated seen)
+  last_fetch, avito_cursor (the latest chat change handled, see below)
+  avito_webhook_at: when Avito last delivered to the webhook (saved at most once a minute)
 ```
 
 - Each account has its own client credentials, token, webhook URL and subscription. Adding, disabling or
@@ -92,6 +93,24 @@ Two paths, both idempotent by Avito message id:
 API limits shape the poll: `limit` is at most 100 and `offset` at most 1000 for both chats and messages, so
 only the latest ~1100 of each are reachable.
 
+The admin page can also act on an account outside the schedule:
+
+- **Check connection** asks for a new token, the account, one chat and the webhook subscriptions Avito holds
+  (four requests, nothing changed) and says which failed: refused keys, no subscription (402), rate limit,
+  network, or keys that now open another account.
+- **Sync now** queues one poll (`AvitoSyncJob`, `Channel#fetch(true)`) whatever the poll interval.
+- **Load history** imports the chats of N past days for an account already connected (`backfill_days`
+  applies to the first poll only). It walks the chat list down from the newest change, 20 chats per job
+  (`AvitoHistoryJob`), each read back to the start date, and the next job waits 3 s per request the last one
+  made, about 20 requests a minute: far below the hundred in a few minutes that set off Avito's throttling.
+  No worker is held between batches. A chat that gets a message during the walk jumps to the top, past it,
+  so a last sweep reads the chats changed since the load began. The ~1100 limit applies: older chats and
+  messages cannot be reached. A history message older than what its chat's tickets already hold is filed
+  in the chat's ticket as it is, without reopening it or starting a new one; a newer one is a missed
+  message and counts as usual. The poll's cursor is left alone. Progress lives in the cache, not in the
+  channel's preferences, which a running poll would write back as it read them; the jobs carry their whole
+  state, so a lost cache entry only blanks the page's progress line.
+
 ## Message types
 
 | Avito type | Article |
@@ -125,8 +144,11 @@ only the latest ~1100 of each are reachable.
 
 - Text limit is 1000 characters per message: longer replies are split on paragraph, then sentence, then word
   boundaries, and sent as consecutive messages.
-- Images: `uploadImages` then `messages/image`. Avito accepts no other files; an article with non-image
-  attachments fails delivery with a clear message rather than dropping them silently.
+- Images: `uploadImages` then `messages/image`. Avito accepts no other files: the reply form refuses a
+  non-image attachment before the reply is saved, and delivery refuses one too (an article from the API or
+  another interface) with a clear message rather than dropping it silently.
+- A reply that fails after some of its messages went out says so: "Sent 2 of 3 messages; …", in the
+  delivery status and in the "unable to send" note.
 - Delivery status, retries and the "unable to send" note follow Zammad's Telegram job. A 429 retries after
   the delay Avito names; a 402 (the chat is not covered) fails at once.
 - A piece marked attempted but without an Avito id is first looked for among the chat's latest messages

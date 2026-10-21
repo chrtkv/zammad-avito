@@ -1,0 +1,13 @@
+<div class="alert alert--danger hidden" role="alert"></div>
+<fieldset>
+  <div class="input form-group">
+    <div class="formGroup-label">
+      <label for="avito_history_days"><%- @T('Days to load') %> <span>*</span></label>
+    </div>
+    <div class="controls">
+      <input id="avito_history_days" type="number" min="1" max="365" name="days" value="30" class="form-control" required>
+    </div>
+  </div>
+  <p class="help-text"><%- @T('Messages of this many past days are imported in the background, a few chats a minute, so that Avito does not start throttling this system. A message older than the ones of its chat already in Zammad goes into the chat\'s ticket without reopening it.') %></p>
+  <p class="help-text"><%- @T('Avito gives out only the latest ~1100 chats of an account, and the latest ~1100 messages of each chat: anything older cannot be loaded.') %></p>
+</fieldset>

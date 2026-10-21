@@ -8,5 +8,8 @@ Zammad::Application.routes.draw do
   match api_path + '/channels_avito/:id/subscribe',           to: 'channels_avito#subscribe', via: :post
   match api_path + '/channels_avito/:id/enable',              to: 'channels_avito#enable',    via: :post
   match api_path + '/channels_avito/:id/disable',             to: 'channels_avito#disable',   via: :post
+  match api_path + '/channels_avito/:id/check',               to: 'channels_avito#check',     via: :post
+  match api_path + '/channels_avito/:id/sync',                to: 'channels_avito#sync',      via: :post
+  match api_path + '/channels_avito/:id/history',             to: 'channels_avito#history',   via: :post
   match api_path + '/channels_avito_webhook/:callback_token', to: 'channels_avito#webhook',   via: :post
 end

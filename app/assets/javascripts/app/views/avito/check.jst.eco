@@ -1,0 +1,22 @@
+<h3><%- @T('Connection check') %></h3>
+<% if @checking: %>
+  <p class="text-muted"><%- @T('Checking…') %></p>
+<% else if @result.status is 'ok': %>
+  <p><%- @Icon('status', 'supergood-color inline') %> <%- @T('The keys work, and the account "%s" can read its chats.', @result.account) %></p>
+  <% if @result.subscribed: %>
+    <p><%- @T('Avito sends the account\'s messages to this webhook.') %></p>
+  <% else: %>
+    <div class="alert alert--warning" role="alert"><%- @T('Avito has no subscription for this webhook. Subscribe it again.') %></div>
+  <% end %>
+  <% if !_.isEmpty(@result.subscriptions): %>
+    <p class="text-muted"><%- @T('Webhook addresses Avito has for these keys:') %></p>
+    <% for url in @result.subscriptions: %>
+      <p class="text-muted"><code><%= url %></code></p>
+    <% end %>
+  <% end %>
+<% else: %>
+  <div class="alert alert--danger" role="alert">
+    <%- @T(@failure) %>
+    <% if @result.message: %><br><%= @result.message %><% end %>
+  </div>
+<% end %>

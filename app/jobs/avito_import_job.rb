@@ -1,11 +1,9 @@
 # Imports one message the Avito webhook delivered. Own messages arrive here a minute late
 # (AvitoChannel::OWN_MESSAGE_DELAY) so the echo of a Zammad reply is recognised as such.
 class AvitoImportJob < ApplicationJob
-  MAX_ATTEMPTS = 4
+  include AvitoChannel::JobRetry
 
-  retry_on StandardError, attempts: MAX_ATTEMPTS, wait: lambda { |executions|
-    executions * 60.seconds
-  }
+  MAX_ATTEMPTS = 4
 
   def perform(channel_id, value)
     channel = Channel.find_by(id: channel_id, area: AvitoChannel::AREA)
@@ -20,10 +18,10 @@ class AvitoImportJob < ApplicationJob
     ensure
       transport.finish
     end
-  rescue AvitoMessenger::Error::RateLimited => e
-    raise if executions >= MAX_ATTEMPTS
+  rescue => e
+    return retry_later(e, base: 60) if retries_left?(MAX_ATTEMPTS)
 
-    # retry_on's wait knows only the attempt number; Avito says how long to wait.
-    retry_job(wait: e.retry_after.seconds)
+    # The poll reads the chat again and imports what this job could not.
+    Rails.logger.error "Avito message #{value.is_a?(Hash) ? value['id'] : '?'} of channel #{channel_id} not imported: #{e.message}"
   end
 end

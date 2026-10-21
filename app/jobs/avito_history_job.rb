@@ -1,13 +1,8 @@
 # One batch of an account's history load; queues the next one, spaced out (see AvitoChannel::History).
 class AvitoHistoryJob < ApplicationJob
-  MAX_ATTEMPTS = 4
+  include AvitoChannel::JobRetry
 
-  retry_on StandardError, attempts: MAX_ATTEMPTS, wait: lambda { |executions|
-    executions * 120.seconds
-  } do |job, error|
-    channel = Channel.find_by(id: job.arguments.first, area: AvitoChannel::AREA)
-    AvitoChannel::History.finish!(channel, job.arguments.second, error: error.message) if channel
-  end
+  MAX_ATTEMPTS = 4
 
   def perform(channel_id, state)
     channel = Channel.find_by(id: channel_id, area: AvitoChannel::AREA)
@@ -22,10 +17,9 @@ class AvitoHistoryJob < ApplicationJob
     return if state['finished_at']
 
     self.class.set(wait: wait.seconds).perform_later(channel.id, state)
-  rescue AvitoMessenger::Error::RateLimited => e
-    raise if executions >= MAX_ATTEMPTS
+  rescue => e
+    return retry_later(e, base: 120) if retries_left?(MAX_ATTEMPTS)
 
-    # retry_on's wait knows only the attempt number; Avito says how long to wait.
-    retry_job(wait: e.retry_after.seconds)
+    AvitoChannel::History.finish!(channel, state, error: e.message) if channel
   end
 end

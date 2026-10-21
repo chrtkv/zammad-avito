@@ -89,6 +89,42 @@ RSpec.describe 'Avito review regression scenarios', :aggregate_failures do
     expect(subscribed[:subscribed_at].present? && subscribed[:url] != AvitoChannel::Account.webhook_url(channel)).to be(false)
   end
 
+  # Review, 2026-10-21: after the fourth 429 retry_on retried on its own: seven sends, four final notes.
+  it 'gives a rate-limited delivery four runs in all, each after Avito\'s delay, and one note', performs_jobs: true do
+    ticket  = ingest('first').ticket
+    article = agent_reply(ticket)
+    clear_jobs
+    send_url = "https://api.avito.ru/messenger/v1/accounts/#{account}/chats/chat-1/messages"
+    stub_request(:post, send_url).to_return(status: 429, body: { message: 'rate limit' }.to_json, headers: { 'Retry-After' => '900' })
+    stub_avito(:get, "/messenger/v3/accounts/#{account}/chats/chat-1/messages/", body: [])
+
+    freeze_time do
+      expect { CommunicateAvitoJob.perform_now(article.id) }.to have_enqueued_job(CommunicateAvitoJob).at(15.minutes.from_now)
+      2.times do
+        expect { perform_enqueued_jobs(only: CommunicateAvitoJob) }.to have_enqueued_job(CommunicateAvitoJob).at(15.minutes.from_now)
+      end
+      expect { perform_enqueued_jobs(only: CommunicateAvitoJob) }.not_to have_enqueued_job(CommunicateAvitoJob)
+    end
+
+    expect(a_request(:post, send_url)).to have_been_made.times(4)
+    expect(ticket.reload.articles.count { |a| a.body.start_with?('Unable to send Avito message') }).to eq(1)
+    expect(article.reload.preferences['delivery_status']).to eq('fail')
+  end
+
+  it 'retries a webhook import Avito rate-limits after Avito\'s delay, and leaves it to the poll after four runs', performs_jobs: true do
+    value = avito_message(id: 'm-limited', chat_id: 'chat-1')
+    stub_request(:get, "https://api.avito.ru/messenger/v2/accounts/#{account}/chats/chat-1")
+      .to_return(status: 429, body: { message: 'rate limit' }.to_json, headers: { 'Retry-After' => '300' })
+
+    freeze_time do
+      expect { AvitoImportJob.perform_now(channel.id, value) }.to have_enqueued_job(AvitoImportJob).at(5.minutes.from_now)
+      2.times { perform_enqueued_jobs(only: AvitoImportJob) }
+      expect { perform_enqueued_jobs(only: AvitoImportJob) }.not_to raise_error
+    end
+    expect(enqueued_jobs.count { |job| job['job_class'] == 'AvitoImportJob' }).to eq(0)
+    expect(AvitoMessageRef.known?(channel, 'm-limited')).to be(false)
+  end
+
   it 'honors Retry-After when scheduling a delivery retry', performs_jobs: true do
     article = agent_reply(ingest('first').ticket)
     stub_avito(:post, "/messenger/v1/accounts/#{account}/chats/chat-1/messages", status: 429,

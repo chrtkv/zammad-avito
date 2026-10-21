@@ -1,11 +1,9 @@
-# Sends an agent's Avito reply. Delivery status, retries and the final "unable to send" note follow
-# Zammad's CommunicateTelegramJob.
+# Sends an agent's Avito reply. Delivery status and the final "unable to send" note follow Zammad's
+# CommunicateTelegramJob; retries go through AvitoChannel::JobRetry.
 class CommunicateAvitoJob < ApplicationJob
-  MAX_RETRIES = 4
+  include AvitoChannel::JobRetry
 
-  retry_on StandardError, attempts: MAX_RETRIES, wait: lambda { |executions|
-    executions * 120.seconds
-  }
+  MAX_RETRIES = 4
 
   def perform(article_id)
     article = Ticket::Article.find(article_id)
@@ -18,17 +16,11 @@ class CommunicateAvitoJob < ApplicationJob
       # Retrying cannot help: report it at once.
       fail!(article, e.message, final: true)
       return
-    rescue AvitoMessenger::Error::RateLimited => e
-      final = article.preferences['delivery_retry'] >= MAX_RETRIES
-      fail!(article, e.message, final:)
-      raise if final
-
-      # retry_on's wait knows only the attempt number; Avito says how long to wait.
-      retry_job(wait: e.retry_after.seconds)
-      return
     rescue => e
-      fail!(article, e.message, final: article.preferences['delivery_retry'] >= MAX_RETRIES)
-      raise
+      final = !retries_left?(MAX_RETRIES)
+      fail!(article, e.message, final:)
+      retry_later(e, base: 120) if !final
+      return
     end
 
     article.preferences['delivery_status_message'] = nil

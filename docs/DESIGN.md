@@ -153,14 +153,16 @@ The admin page can also act on an account outside the schedule:
   told apart in the ticket list. An account can also tag its new tickets with its name in Latin letters.
 - The reply form knows a ticket from Avito by its chat (`preferences.avito.chat_id`), not by its first article's
   type: a chat can open with Avito's notice, an internal note.
-- Avito's own notices are created by one user "Avito" (login `avito.system`, inactive), neither the shop nor
+- Avito's own notices are created by one user "Avito" (login `avito.system`, with Avito's mark as avatar), neither the shop nor
   Zammad.
 - Messages written in Avito itself are created by a service user of the account (login
-  `avito.account.<user_id>`, inactive, named after the shop), not by Zammad's system user, so they show with
+  `avito.account.<user_id>`, named after the shop), not by Zammad's system user, so they show with
   the shop's Avito avatar. Customers get the avatar of their Avito profile when they are created.
 
 ## Getting replies out
 
+- Both are active users without a password or an e-mail: nobody can sign in as them, and Zammad shows their
+  avatars, which it greys out almost to nothing for inactive users.
 - Text limit is 1000 characters per message: longer replies are split on paragraph, then sentence, then word
   boundaries, and sent as consecutive messages.
 - Images: `uploadImages` then `messages/image`. Avito accepts no other files: the reply form refuses a

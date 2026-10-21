@@ -101,7 +101,7 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
 
     it 'is filed under the account\'s service user, wearing the shop\'s Avito avatar' do
       author = import(own).created_by
-      expect(author).to have_attributes(login: "avito.account.#{account}", firstname: 'Demo Shop', lastname: '(Avito)', active: false)
+      expect(author).to have_attributes(login: "avito.account.#{account}", firstname: 'Demo Shop', lastname: '(Avito)', active: true)
       expect(author.image).to be_present.and(not_eq('none'))
       expect(a_request(:get, "https://www.avito.ru/test-avatar/#{account}-256.png")).to have_been_made
       expect(import(avito_message(id: 'm3', author_id: account, text: 'Ещё')).created_by).to eq(author)
@@ -229,7 +229,9 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
       expect(article).to have_attributes(internal: true, body: include('Покупатель оформил доставку'), from: 'Avito')
       expect(article.type.name).to eq('note')
       expect(article.sender.name).to eq('System')
-      expect(article.created_by).to have_attributes(login: 'avito.system', firstname: 'Avito', active: false)
+      expect(article.created_by).to have_attributes(login: 'avito.system', firstname: 'Avito', active: true)
+      expect(article.created_by.image).to be_present.and(not_eq('none'))
+      expect(Avatar.get_default('User', article.created_by_id).source).to eq('avito')
       expect(AvitoMessageRef.known?(channel, 's1')).to be(true)
     end
 

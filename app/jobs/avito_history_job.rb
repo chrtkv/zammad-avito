@@ -4,22 +4,23 @@ class AvitoHistoryJob < ApplicationJob
 
   MAX_ATTEMPTS = 4
 
-  def perform(channel_id, state)
-    channel = Channel.find_by(id: channel_id, area: AvitoChannel::AREA)
-    return if !channel || !AvitoChannel::History.current?(channel, state)
+  def perform(history_load_id)
+    history_load = AvitoHistoryLoad.find_by(id: history_load_id)
+    return if !history_load&.running?
 
-    if !channel.active
-      AvitoChannel::History.finish!(channel, state, error: AvitoChannel.translate(__('The Avito account is disabled.')))
+    channel = Channel.find_by(id: history_load.channel_id, area: AvitoChannel::AREA)
+    if !channel&.active
+      history_load.finish!(error: AvitoChannel.translate(__('The Avito account is disabled.')))
       return
     end
 
-    state, wait = AvitoChannel::History.step(channel, state)
-    return if state['finished_at']
+    wait = AvitoChannel::History.step(channel, history_load)
+    return if !history_load.running?
 
-    self.class.set(wait: wait.seconds).perform_later(channel.id, state)
+    self.class.set(wait: wait.seconds).perform_later(history_load.id)
   rescue => e
     return retry_later(e, base: 120) if retries_left?(MAX_ATTEMPTS)
 
-    AvitoChannel::History.finish!(channel, state, error: e.message) if channel
+    history_load&.finish!(error: e.message)
   end
 end

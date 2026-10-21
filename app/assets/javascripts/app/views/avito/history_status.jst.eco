@@ -1,7 +1,7 @@
 <% if @history && @history.error: %>
   <div class="alert alert--danger" role="alert"><%- @T('Loading the history stopped:') %> <%= @history.error %></div>
 <% else if @history && @history.finished_at: %>
-  <p><%- @T('History loaded') %> <%- @humanTime(new Date(@history.finished_at * 1000).toISOString()) %>: <%- @T('the last %s days, %s chats read, %s messages imported.', @history.days, @history.chats, @history.imported) %></p>
+  <p><%- @T('History loaded') %> <%- @humanTime(@history.finished_at) %>: <%- @T('the last %s days, %s chats read, %s messages imported.', @history.days, @history.chats, @history.imported) %></p>
 <% else if @history: %>
   <p><%- @T('Loading the last %s days: %s chats read, %s messages imported so far.', @history.days, @history.chats, @history.imported) %></p>
 <% end %>

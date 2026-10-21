@@ -18,8 +18,6 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
       type: 'text', content: { text: text } }
   end
 
-  before { Rails.cache.delete("avito-history-#{channel.id}") }
-
   describe AvitoChannel::History::Batch do
     def state(**overrides)
       { 'run' => 'r1', 'days' => 30, 'since' => (now - 30.days).to_i, 'started_at' => now.to_i, 'phase' => 'walk',
@@ -155,16 +153,39 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
 
     it 'queues the first batch and refuses a second load while it runs' do
       expect { described_class.start!(channel, days: 7) }.to have_enqueued_job(AvitoHistoryJob)
-      expect(described_class.state(channel)).to include('days' => 7, 'phase' => 'walk', 'offset' => 0, 'chat' => nil)
+      expect(described_class.latest(channel)).to have_attributes(days: 7, phase: 'walk', list_offset: 0, chat_id: nil, finished_at: nil)
       expect { described_class.start!(channel, days: 7) }.to raise_error(described_class::Invalid)
     end
 
-    it 'lets a new load start once the last one has stalled' do
-      state = described_class.start!(channel, days: 7)
-      # travel would clear the cache the state lives in.
-      Rails.cache.write("avito-history-#{channel.id}", state.merge('updated_at' => 31.minutes.ago.to_i))
+    # Review, 2026-10-21: in the cache, a deploy (zammad-init clears it) lost the record of a finished load.
+    it 'keeps what a finished load did, whatever happens to the cache' do
+      described_class.start!(channel, days: 7).finish!
+      Rails.cache.clear
+
+      expect(described_class.latest(channel).as_json).to include('days' => 7, 'finished_at' => be_present)
+    end
+
+    it 'lets two loads of an account run at once in no case, the database included' do
+      described_class.start!(channel, days: 7)
+
+      expect { AvitoHistoryLoad.transaction(requires_new: true) { AvitoHistoryLoad.create!(channel_id: channel.id, days: 3, since: 3.days.ago) } }
+        .to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it 'closes a load that has stalled, and lets a new one start' do
+      stalled = described_class.start!(channel, days: 7)
+      stalled.update_columns(updated_at: 31.minutes.ago)
 
       expect { described_class.start!(channel, days: 7) }.to have_enqueued_job(AvitoHistoryJob)
+      expect(stalled.reload).to have_attributes(finished_at: be_present, error: 'No progress for 30 minutes.')
+    end
+
+    it 'removes an account\'s loads with the account' do
+      stub_avito(:post, '/messenger/v1/webhook/unsubscribe', body: { ok: true })
+      described_class.start!(channel, days: 7)
+
+      AvitoChannel::Account.destroy!(channel)
+      expect(AvitoHistoryLoad.where(channel_id: channel.id)).to be_empty
     end
   end
 
@@ -174,14 +195,12 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
       stub_chats(*chats)
       chats.each { |chat| stub_messages(chat['id'], [list_message("m-#{chat['id']}", created: Time.zone.at(chat['updated']))]) }
 
-      state = AvitoChannel::History.start!(channel, days: 3)
-      expect(described_class).to have_been_enqueued.with(channel.id, state)
+      history_load = AvitoChannel::History.start!(channel, days: 3)
+      expect(described_class).to have_been_enqueued.with(history_load.id)
 
       10.times { perform_enqueued_jobs(only: described_class) if enqueued_jobs.any? { |job| job['job_class'] == described_class.name } }
 
-      expect(AvitoChannel::History.state(channel)).to include('chats' => 25, 'imported' => 25, 'unavailable' => 0)
-      expect(AvitoChannel::History.state(channel)).not_to have_key('error')
-      expect(AvitoChannel::History.state(channel)['finished_at']).to be_present
+      expect(history_load.reload).to have_attributes(chats: 25, imported: 25, unavailable: 0, error: nil, finished_at: be_present)
       expect(AvitoMessageRef.where(channel_id: channel.id).count).to eq(25)
       expect(a_request(:get, %r{/messenger/v2/accounts/#{account}/chats\?})).to have_been_made.times(4)
     end
@@ -190,33 +209,46 @@ RSpec.describe AvitoChannel::History, :aggregate_failures do
       chats = (1..25).map { |n| avito_chat(id: "chat-#{n}", updated: (now - n.hours).to_i) }
       stub_chats(*chats)
       chats.each { |chat| stub_messages(chat['id'], []) }
-      state = AvitoChannel::History.start!(channel, days: 3)
+      history_load = AvitoChannel::History.start!(channel, days: 3)
       clear_enqueued_jobs
 
       freeze_time do
-        expect { described_class.perform_now(channel.id, state) }
-          .to have_enqueued_job(described_class).at((AvitoChannel::History::BUDGET * AvitoChannel::History::PACE).seconds.from_now)
+        expect { described_class.perform_now(history_load.id) }
+          .to have_enqueued_job(described_class).with(history_load.id)
+          .at((AvitoChannel::History::BUDGET * AvitoChannel::History::PACE).seconds.from_now)
       end
+      expect(history_load.reload).to have_attributes(list_offset: 9, chats: 9)
     end
 
-    it 'stops a load replaced by a newer one' do
-      state = AvitoChannel::History.start!(channel, days: 3)
-      Rails.cache.write("avito-history-#{channel.id}", state.merge('updated_at' => 31.minutes.ago.to_i))
-      AvitoChannel::History.start!(channel, days: 5)
+    it 'stops for a load that was closed meanwhile' do
+      history_load = AvitoChannel::History.start!(channel, days: 3)
+      history_load.finish!(error: 'closed')
 
-      described_class.perform_now(channel.id, state)
+      described_class.perform_now(history_load.id)
 
       expect(a_request(:get, %r{/chats})).not_to have_been_made
     end
 
     it 'stops for a disabled account and says why' do
-      state = AvitoChannel::History.start!(channel, days: 3)
+      history_load = AvitoChannel::History.start!(channel, days: 3)
       channel.update!(active: false)
 
-      described_class.perform_now(channel.id, state)
+      described_class.perform_now(history_load.id)
 
-      expect(AvitoChannel::History.state(channel)).to include('error' => 'The Avito account is disabled.')
+      expect(history_load.reload).to have_attributes(error: 'The Avito account is disabled.', finished_at: be_present)
       expect(a_request(:get, %r{/chats})).not_to have_been_made
+    end
+
+    it 'records why it gave up after its last attempt' do
+      history_load = AvitoChannel::History.start!(channel, days: 3)
+      stub_avito(:get, "/messenger/v2/accounts/#{account}/chats", status: 500, body: { message: 'internal error' })
+      clear_enqueued_jobs
+
+      described_class.perform_now(history_load.id)
+      3.times { perform_enqueued_jobs(only: described_class) }
+
+      expect(history_load.reload).to have_attributes(error: include('HTTP 500'), finished_at: be_present)
+      expect(enqueued_jobs.count { |job| job['job_class'] == described_class.name }).to eq(0)
     end
   end
 end

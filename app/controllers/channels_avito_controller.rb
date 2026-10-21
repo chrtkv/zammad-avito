@@ -13,7 +13,7 @@ class ChannelsAvitoController < ApplicationController
       assets:       assets,
       channel_ids:  channels.map(&:id),
       webhook_urls: channels.to_h { |channel| [channel.id, AvitoChannel::Account.webhook_url(channel)] },
-      history:      channels.to_h { |channel| [channel.id, AvitoChannel::History.state(channel)] },
+      history:      channels.to_h { |channel| [channel.id, AvitoChannel::History.latest(channel)&.as_json] },
     }
   end
 
@@ -55,14 +55,14 @@ class ChannelsAvitoController < ApplicationController
   end
 
   def history
-    render json: AvitoChannel::History.start!(find_active_channel, days: params[:days])
+    render json: AvitoChannel::History.start!(find_active_channel, days: params[:days]).as_json
   rescue AvitoChannel::History::Invalid => e
     raise Exceptions::UnprocessableContent, e.message
   end
 
   # The progress of a history load, which the admin page follows while it runs.
   def history_state
-    render json: AvitoChannel::History.state(find_channel)
+    render json: AvitoChannel::History.latest(find_channel)&.as_json
   end
 
   def destroy

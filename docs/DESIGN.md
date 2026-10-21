@@ -113,13 +113,13 @@ The admin page can also act on an account outside the schedule:
   during the walk jumps to the top, past it, so a last sweep reads the chats changed since the load began. The ~1100 limit applies: older chats and
   messages cannot be reached. A history message older than what its chat's tickets already hold is filed
   in the chat's ticket as it is, without reopening it or starting a new one; a newer one is a missed
-  message and counts as usual. The poll's cursor is left alone. Progress lives in the cache, not in the
-  channel's preferences, which a running poll would write back as it read them; the jobs carry their whole
-  state, so a lost cache entry only blanks the page's progress line. That happens on every start of the
-  Docker image's `zammad-init`, which clears Rails' cache: a running load shows again after its next job, a
-  finished one's line is gone, and for those seconds the page would let a second load start beside it
-  (harmless: imports are idempotent, but it doubles the requests). The page polls the line every 10 s while
-  a load runs.
+  message and counts as usual. The poll's cursor is left alone. Each load is a row of `avito_history_loads`
+  (its place in the walk, its counts, its outcome), kept as the account's record of its loads; the jobs
+  carry only its id. Not the channel's preferences, which a running poll writes back as it read them, and
+  not Rails' cache, where it lived first: the Docker image's `zammad-init` clears that on every start, and a
+  deploy lost the result of a finished load. A unique partial index allows one running load per account,
+  even against two starts at once. A running load that has not moved for 30 minutes is closed ("no
+  progress"), and another may start. The page shows the latest load and polls it every 10 s while it runs.
 
 ## Message types
 

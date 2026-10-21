@@ -110,6 +110,7 @@ module AvitoChannel
     def self.destroy!(channel, transport: AvitoMessenger::Transport.new)
       unsubscribe(channel, transport:)
       AvitoMessageRef.where(channel_id: channel.id).delete_all
+      AvitoHistoryLoad.where(channel_id: channel.id).delete_all
       channel.destroy!
     end
 

@@ -93,6 +93,7 @@ module AvitoChannel
         'The history of this account is being loaded already.'                   => 'История этого аккаунта уже загружается.',
         'The Avito account is disabled.'                                         => 'Аккаунт Авито отключён.',
         'Loading the history stopped:'                                           => 'Загрузка истории остановилась:',
+        'No progress for 30 minutes.'                                            => 'Нет движения 30 минут.',
         'History loaded'                                                         => 'История загружена',
         'the last %s days, %s chats read, %s messages imported.'                 => 'за последние %s дн.: прочитано чатов — %s, загружено сообщений — %s.',
         'Loading the last %s days: %s chats read, %s messages imported so far.'  => 'Загружаются последние %s дн.: пока прочитано чатов — %s, загружено сообщений — %s.',

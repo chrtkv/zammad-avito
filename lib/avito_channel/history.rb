@@ -17,10 +17,10 @@ module AvitoChannel
   # reads the chats changed since the load started. A chat the walk is inside of is followed by its id, not by
   # its place in the list, which such moves shift.
   #
-  # Progress is kept in the cache, not on the channel: a poll saves the channel's preferences as it read them
-  # when it began, and would put back an older progress. The jobs carry the whole state, so a lost cache entry
-  # costs only what the admin page shows. The Docker image's zammad-init clears the cache on every start: a
-  # running load reappears with its next job, a finished one's result is gone.
+  # A load and its progress are a row of AvitoHistoryLoad, not part of the channel: a poll saves the channel's
+  # preferences as it read them when it began, and would put back an older progress. Rails' cache, where it
+  # lived first, is cleared on every start of the Docker image's zammad-init. The jobs carry only the row's
+  # id.
   module History
     class Invalid < StandardError; end
 
@@ -30,71 +30,58 @@ module AvitoChannel
     # A load whose state has not moved for this long is taken to have died, and another may start.
     STALE    = 30.minutes
 
-    # The first state; AvitoHistoryJob takes it from here.
+    # The new load; AvitoHistoryJob takes it from here.
     def self.start!(channel, days:, now: Time.zone.now)
       days = Integer(days.to_s, 10, exception: false)
       raise Invalid, __('Enter a number of days from 1 to 365.') if !days&.between?(1, MAX_DAYS)
-      raise Invalid, __('The history of this account is being loaded already.') if running?(channel)
 
-      state = {
-        'run'         => SecureRandom.hex(8),
-        'days'        => days,
-        'since'       => (now - days.days).to_i,
-        'started_at'  => now.to_i,
-        'phase'       => 'walk',
-        'offset'      => 0,
-        'chat'        => nil,
-        'page'        => 0,
-        'chats'       => 0,
-        'imported'    => 0,
-        'unavailable' => 0,
-      }
-      store(channel, state)
-      AvitoHistoryJob.perform_later(channel.id, state)
-      state
+      expire_stale(channel)
+      raise Invalid, already_running if running?(channel)
+
+      history_load = AvitoHistoryLoad.transaction(requires_new: true) do
+        AvitoHistoryLoad.create!(channel_id: channel.id, days:, since: now - days.days, phase: 'walk')
+      end
+      AvitoHistoryJob.perform_later(history_load.id)
+      history_load
+    rescue ActiveRecord::RecordNotUnique
+      # Another start got in between the check and the insert.
+      raise Invalid, already_running
     end
 
-    def self.state(channel)
-      Rails.cache.read(key(channel))
+    # The account's latest load, for the admin page; a dead one is closed first, so the page stops following it.
+    def self.latest(channel)
+      expire_stale(channel)
+      AvitoHistoryLoad.where(channel_id: channel.id).reorder(:id).last
     end
 
     def self.running?(channel)
-      state = state(channel)
-      state.present? && state['finished_at'].nil? && state['updated_at'].to_i > STALE.ago.to_i
+      AvitoHistoryLoad.exists?(channel_id: channel.id, finished_at: nil)
     end
 
-    # Whether a job of this run should go on: not once another load has taken its place.
-    def self.current?(channel, state)
-      stored = state(channel)
-      stored.nil? || stored['run'] == state['run']
-    end
-
-    # Runs one job's batch. Returns the next state and the seconds to wait before it, or a finished state.
-    def self.step(channel, state, transport: AvitoMessenger::Transport.new)
-      state, requests, through = Batch.new(channel, state, transport:).run
-      if through && state['phase'] == 'walk'
-        state = state.merge('phase' => 'sweep', 'offset' => 0, 'chat' => nil, 'page' => 0)
-      elsif through
-        state = state.merge('finished_at' => Time.zone.now.to_i)
+    # A running load that has not moved for STALE has lost its jobs (a worker killed mid-way, say): it is closed,
+    # and another may start. Should its job come back after all, it finds the load finished and stops.
+    def self.expire_stale(channel)
+      AvitoHistoryLoad.where(channel_id: channel.id, finished_at: nil).where(updated_at: ...STALE.ago).find_each do |history_load|
+        history_load.finish!(error: AvitoChannel.translate(__('No progress for 30 minutes.')))
       end
-      store(channel, state)
-
-      [state, [requests, 1].max * PACE]
     end
 
-    def self.finish!(channel, state, error:)
-      store(channel, state.merge('finished_at' => Time.zone.now.to_i, 'error' => error.to_s))
+    # Runs one job's batch and saves where it got to. Returns the seconds to wait before the next one.
+    def self.step(channel, history_load, transport: AvitoMessenger::Transport.new)
+      position, requests, through = Batch.new(channel, history_load.position, transport:).run
+      sweep = position['phase'] == 'sweep'
+      position = position.merge('phase' => 'sweep', 'offset' => 0, 'chat' => nil, 'page' => 0) if through && !sweep
+      history_load.advance!(position)
+      history_load.finish! if through && sweep
+
+      [requests, 1].max * PACE
     end
 
-    def self.store(channel, state)
-      Rails.cache.write(key(channel), state.merge('updated_at' => Time.zone.now.to_i), expires_in: 30.days)
+    def self.already_running
+      __('The history of this account is being loaded already.')
     end
 
-    def self.key(channel)
-      "avito-history-#{channel.id}"
-    end
-
-    private_class_method :store, :key
+    private_class_method :already_running
 
     # Counts the requests a batch makes, whatever makes them: the chat list, message pages, the files and
     # chats the importer fetches, a token refresh.

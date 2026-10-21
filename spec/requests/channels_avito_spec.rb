@@ -302,8 +302,6 @@ RSpec.describe 'Avito channel', :aggregate_failures, type: :request do
     end
 
     describe 'POST /api/v1/channels_avito/:id/history', performs_jobs: true do
-      before { Rails.cache.delete("avito-history-#{channel.id}") }
-
       it 'starts loading the history of past days and shows its progress in the list' do
         expect { post "/api/v1/channels_avito/#{channel.id}/history", params: { days: 14 }, as: :json }
           .to have_enqueued_job(AvitoHistoryJob)

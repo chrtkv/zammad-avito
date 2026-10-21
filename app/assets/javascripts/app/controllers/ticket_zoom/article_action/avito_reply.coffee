@@ -76,10 +76,58 @@ class AvitoReply
 
     return if type isnt AvitoReply.TYPE
 
+    AvitoReply.pasteImagesAsAttachments(ui)
+
     rawHTML   = ui.$('[data-name=body]').html()
     cleanHTML = App.Utils.htmlRemoveRichtext(rawHTML)
     if cleanHTML && cleanHTML.html() != rawHTML
       ui.$('[data-name=body]').html(cleanHTML)
+
+  # A picture pasted into an Avito reply goes in as an attachment, sent like one picked as a file. The editor
+  # would put it into the text as an inline image, which an Avito message cannot carry and which the text's
+  # cleaning (@params) removes: the picture vanished (2026-10-22). Bound once per form, in the capture phase on
+  # the form, so it runs before the editor's own paste handling; it acts only while the reply is an Avito one
+  # and the clipboard holds a picture without text (text and HTML are pasted as before).
+  @pasteImagesAsAttachments: (ui) ->
+    form = ui.$('.article-add').get(0)
+    return if !form || form.avitoPasteBound
+    form.avitoPasteBound = true
+
+    form.addEventListener('paste', (e) ->
+      return if ui.type isnt AvitoReply.TYPE
+      return if !$(e.target).closest('[data-name=body]').length
+
+      files = AvitoReply.clipboardImages(e.clipboardData)
+      return if _.isEmpty(files)
+
+      e.preventDefault()
+      e.stopPropagation()
+      AvitoReply.attach(ui, files)
+    , true)
+
+  @clipboardImages: (clipboardData) ->
+    return [] if !clipboardData
+    return [] if (clipboardData.getData('text/plain') || '').trim()
+
+    stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')
+    files = []
+    for item, index in clipboardData.items || []
+      continue if item.kind isnt 'file' || item.type.indexOf('image/') isnt 0
+      file = item.getAsFile()
+      continue if !file
+      extension = item.type.split('/')[1].replace('jpeg', 'jpg').replace(/\+.*/, '')
+      files.push(new File([file], "image-#{stamp}-#{index + 1}.#{extension}", type: item.type))
+    files
+
+  # Hands the files to the form's attachment field, as if picked there: Zammad's own upload takes them on.
+  @attach: (ui, files) ->
+    input = ui.$('.article-attachment input[type=file]').get(0)
+    return if !input
+
+    transfer = new DataTransfer()
+    transfer.items.add(file) for file in files
+    input.files = transfer.files
+    input.dispatchEvent(new Event('change', bubbles: true))
 
   @params: (type, params, ui) ->
     if type is AvitoReply.TYPE

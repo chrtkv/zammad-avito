@@ -48,6 +48,12 @@ RSpec.describe AvitoMessenger::Echo do
     expect(described_class.match(image('640x480' => 'https://img/a-640.jpg'), sent)).to be_nil
   end
 
+  # Seen on the live API on 2026-10-22: the same address, signed anew.
+  it 'matches the uploaded image whatever the query string Avito signs its address with' do
+    pieces = [{ article_id: 7, chat_id: 'c1', kind: 'image', image_urls: ['https://img/a-640.jpg?cqp=2.upload'], sent_at: }]
+    expect(described_class.match(image('640x480' => 'https://img/a-640.jpg?cqp=2.listed'), pieces)).to eq(7)
+  end
+
   # Review, 2026-10-21: a manager's picture sent in Avito right after a failed send was taken for the reply.
   it 'does not take another own image for the uploaded one' do
     pieces = [{ article_id: 7, chat_id: 'c1', kind: 'image', image_urls: ['https://img/a-640.jpg'], sent_at: }]

@@ -2,10 +2,10 @@ module AvitoMessenger
   # Recognises Avito reporting back a message Zammad itself sent, when the message id never made it onto the
   # article (the send went out and its answer was lost, or the save after it failed). Such an own message is
   # the same piece in the same chat, written at or after the attempt: the same text, or an image carrying an
-  # address of the image Zammad uploaded for it. Any own image is not enough: a manager sending a picture in
-  # Avito meanwhile would pass for the reply (review, 2026-10-21). That Avito reports an uploaded image under
-  # the addresses uploadImages gave is not yet confirmed on the live API; until it is, an image whose answer
-  # was lost may find no match, and Delivery then asks the agent to look rather than guess.
+  # address of the image Zammad uploaded for it (compared without the query string, which Avito signs anew each
+  # time). Any own image is not enough: a manager sending a picture in Avito meanwhile would pass for the reply
+  # (review, 2026-10-21). On the live API the image message carries the addresses uploadImages gave, the query
+  # aside (2026-10-22).
   #
   #   Echo.match(message, sent)
   #   # sent: [{ article_id:, chat_id:, kind: 'text' | 'image', text:, image_urls: [...], sent_at: }]
@@ -35,12 +35,18 @@ module AvitoMessenger
 
     def same_piece?(piece, message)
       if piece[:kind].to_s == 'image'
-        return message.type == 'image' && Array(piece[:image_urls]).intersect?(message.image_urls)
+        return message.type == 'image' && image_paths(piece[:image_urls]).intersect?(image_paths(message.image_urls))
       end
       return false if message.type != 'text'
 
       text = normalize(message.text)
       !text.empty? && normalize(piece[:text]) == text
+    end
+
+    # An address without its query: Avito signs each one it hands out (`?cqp=…`, seen on the live API on
+    # 2026-10-22), so the image message and the upload answer name the same picture by different query strings.
+    def image_paths(urls)
+      Array(urls).map { |url| url.to_s.split('?', 2).first }.reject(&:empty?)
     end
 
     def normalize(text)

@@ -244,6 +244,9 @@ On 2026-10-21, with the channel on a public address and the webhook subscribed:
   not imported a second time.
 - **The sender:** user agent `Go-http-client/1.1`, from 176.114.121.96 and 176.114.125.105 (that day). The user
   agent is a library's: a fail2ban rule against HTTP libraries on the way in must leave the webhook's path alone.
+- **An image message carries the addresses `uploadImages` gave**, but each with a query string Avito signs anew
+  (`?cqp=…`): an image sent from Zammad on 2026-10-22 had the same four paths in both and no equal address.
+  Delivery and the echo check therefore compare the addresses without their query.
 - **No probe on subscribe.** Avito sent nothing when the webhook was subscribed; the first delivery came with the
   first message.
 
@@ -251,6 +254,3 @@ On 2026-10-21, with the channel on a public address and the webhook subscribed:
 
 1. Are buyer ids stable across two of our accounts?
 2. Do the chats the subscription does not cover reach the webhook at all?
-3. Does an image message carry the addresses `uploadImages` gave for that image? Delivery and the echo
-   check rely on it to recognise an image whose send answer was lost; if not, such an image always ends in
-   the "look in Avito" failure instead of being found.

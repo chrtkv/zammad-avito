@@ -38,6 +38,12 @@ RSpec.describe AvitoMessenger::Message do
     expect(message('type' => 'image', 'content' => { 'image' => { 'sizes' => sizes } }).image_url).to eq('large')
   end
 
+  it 'lists every image size\'s address' do
+    sizes = { '140x105' => 'small', '1280x960' => 'large' }
+    expect(message('type' => 'image', 'content' => { 'image' => { 'sizes' => sizes } }).image_urls).to eq(%w[small large])
+    expect(message('type' => 'text', 'content' => { 'text' => 'x' }).image_urls).to eq([])
+  end
+
   describe '#render_text' do
     it 'keeps text' do
       expect(message('type' => 'text', 'content' => { 'text' => 'Привет' }).render_text).to eq('Привет')

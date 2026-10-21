@@ -21,6 +21,10 @@ module AvitoMessenger
     TOKEN_TTL   = 86_400
     RETRY_AFTER = 60
 
+    # An uploaded image: the id to pass to send_image, and its addresses by size, which the image message
+    # Avito then reports should carry too (see Echo).
+    UploadedImage = Struct.new(:id, :urls, keyword_init: true)
+
     attr_reader :token
 
     # on_token is called with every new Token, so the caller can persist it.
@@ -86,14 +90,15 @@ module AvitoMessenger
       Message.from_hash(data, account_user_id: user_id, chat_id:)
     end
 
-    # Returns the image id to pass to send_image.
+    # Returns an UploadedImage.
     def upload_image(user_id, filename:, content:, content_type:)
       data = post("/messenger/v1/accounts/#{user_id}/uploadImages",
                   multipart: { name: 'uploadfile[]', filename:, content:, content_type: })
-      image_id = data.keys.first if data.is_a?(Hash)
+      image_id, sizes = data.first if data.is_a?(Hash)
       raise Error::BadPayload, 'uploadImages answered without an image id' if image_id.to_s.empty?
 
-      image_id
+      urls = sizes.is_a?(Hash) ? sizes.values.map(&:to_s).reject(&:empty?) : []
+      UploadedImage.new(id: image_id, urls:)
     end
 
     def send_image(user_id, chat_id, image_id)

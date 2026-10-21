@@ -34,14 +34,25 @@ RSpec.describe AvitoMessenger::Echo do
     expect(described_class.match(slightly_behind, sent)).to eq(42)
   end
 
-  it 'matches an image piece with an own image written after the attempt' do
-    image = AvitoMessenger::Message.from_hash(
-      { 'id' => 'img', 'author_id' => account, 'type' => 'image', 'content' => {}, 'created' => (sent_at + 5).to_i },
+  def image(urls)
+    AvitoMessenger::Message.from_hash(
+      { 'id' => 'img', 'author_id' => account, 'type' => 'image', 'created' => (sent_at + 5).to_i,
+        'content' => { 'image' => { 'sizes' => urls } } },
       account_user_id: account, chat_id: 'c1',
     )
-    pieces = [{ article_id: 7, chat_id: 'c1', kind: 'image', sent_at: }]
-    expect(described_class.match(image, pieces)).to eq(7)
-    expect(described_class.match(image, sent)).to be_nil
+  end
+
+  it 'matches an image piece with an own image carrying an address of the uploaded one' do
+    pieces = [{ article_id: 7, chat_id: 'c1', kind: 'image', image_urls: ['https://img/a-640.jpg', 'https://img/a-1280.jpg'], sent_at: }]
+    expect(described_class.match(image('640x480' => 'https://img/a-640.jpg'), pieces)).to eq(7)
+    expect(described_class.match(image('640x480' => 'https://img/a-640.jpg'), sent)).to be_nil
+  end
+
+  # Review, 2026-10-21: a manager's picture sent in Avito right after a failed send was taken for the reply.
+  it 'does not take another own image for the uploaded one' do
+    pieces = [{ article_id: 7, chat_id: 'c1', kind: 'image', image_urls: ['https://img/a-640.jpg'], sent_at: }]
+    expect(described_class.match(image('640x480' => 'https://img/manager.jpg'), pieces)).to be_nil
+    expect(described_class.match(image('640x480' => 'https://img/a-640.jpg'), [pieces.first.merge(image_urls: nil)])).to be_nil
   end
 
   it 'ignores replies outside the window' do

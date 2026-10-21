@@ -99,22 +99,108 @@ RSpec.describe 'Avito review regression scenarios', :aggregate_failures do
     end
   end
 
-  it 'does not resend an image after the send succeeded but its response was lost' do
+  context 'with an image whose send answer was lost' do
+    let(:article) { agent_reply(ingest('first').ticket) }
+    let(:client)  { instance_double(AvitoMessenger::Client) }
+    let(:upload)  { AvitoMessenger::Client::UploadedImage.new(id: 'upload-1', urls: ['https://img.example/upload-1-640.jpg']) }
+
+    def own_image(id, url)
+      AvitoMessenger::Message.from_hash(avito_message(id: id, author_id: account, type: 'image',
+                                                      content: { 'image' => { 'sizes' => { '640x480' => url } } }))
+    end
+
+    before do
+      create(:store, object: 'Ticket::Article', o_id: article.id, data: 'PNG', filename: 'photo.png',
+                     preferences: { 'Content-Type' => 'image/png' })
+      allow(client).to receive_messages(send_text: AvitoMessenger::Message.from_hash(avito_message(id: 'accepted-text', author_id: account)),
+                                        upload_image: upload, mark_read: nil)
+      allow(client).to receive(:send_image).and_raise(AvitoMessenger::Error::Network, 'lost response')
+      begin
+        AvitoChannel::Delivery.new(article, client: client).deliver!
+      rescue AvitoMessenger::Error::Network
+        nil # the send whose answer was lost
+      end
+    end
+
+    it 'finds the image by its upload\'s address instead of sending it again' do
+      sent = own_image('accepted-image', 'https://img.example/upload-1-640.jpg')
+      allow(client).to receive(:messages).and_return([sent])
+
+      AvitoChannel::Delivery.new(article.reload, client: client).deliver!
+
+      expect(client).to have_received(:send_image).once
+      expect(article.reload.preferences.dig('avito', 'pieces', 1, 'message_id')).to eq('accepted-image')
+    end
+
+    # Review, 2026-10-21: a manager's picture sent in Avito after the failed send was taken for the reply.
+    it 'does not take a manager\'s picture for it, and asks the agent to look instead of guessing' do
+      allow(client).to receive(:messages).and_return([own_image('manager-image', 'https://img.example/manager.jpg')])
+
+      expect { AvitoChannel::Delivery.new(article.reload, client: client).deliver! }
+        .to raise_error(AvitoChannel::Delivery::Undeliverable, include('photo.png', 'Look at the chat in Avito'))
+      expect(client).to have_received(:send_image).once
+      expect(article.reload.preferences.dig('avito', 'pieces', 1, 'message_id')).to be_nil
+    end
+  end
+
+  it 'sends an image again when Avito answered its send with an error' do
     article = agent_reply(ingest('first').ticket)
     create(:store, object: 'Ticket::Article', o_id: article.id, data: 'PNG', filename: 'photo.png',
                    preferences: { 'Content-Type' => 'image/png' })
-    client = instance_double(AvitoMessenger::Client)
-    text = AvitoMessenger::Message.from_hash(avito_message(id: 'accepted-text', author_id: account))
-    allow(client).to receive(:send_text).and_return(text)
-    allow(client).to receive(:upload_image).and_return('upload-1')
-    allow(client).to receive(:send_image).and_raise(AvitoMessenger::Error::Network, 'lost response')
-    expect { AvitoChannel::Delivery.new(article, client: client).deliver! }.to raise_error(AvitoMessenger::Error::Network)
-    sent = AvitoMessenger::Message.from_hash(avito_message(id: 'accepted-image', author_id: account, type: 'image'))
-    allow(client).to receive(:messages).and_return([sent])
-    allow(client).to receive(:send_image).and_return(sent)
-    allow(client).to receive(:mark_read)
+    client = instance_double(AvitoMessenger::Client, mark_read: nil, messages: [],
+                                                     send_text: AvitoMessenger::Message.from_hash(avito_message(id: 'text-ok', author_id: account)),
+                                                     upload_image: AvitoMessenger::Client::UploadedImage.new(id: 'upload-1', urls: []))
+    allow(client).to receive(:send_image).and_raise(AvitoMessenger::Error::Api.new('HTTP 500', status: 500))
+    expect { AvitoChannel::Delivery.new(article, client: client).deliver! }.to raise_error(AvitoMessenger::Error::Api)
+
+    allow(client).to receive(:send_image).and_return(AvitoMessenger::Message.from_hash(avito_message(id: 'img-ok', author_id: account, type: 'image')))
     AvitoChannel::Delivery.new(article.reload, client: client).deliver!
-    expect(client).to have_received(:send_image).once
+    expect(article.reload.preferences.dig('avito', 'pieces', 1, 'message_id')).to eq('img-ok')
+  end
+
+  describe 'tickets merged across chats' do
+    let(:send_url) { ->(chat) { "https://api.avito.ru/messenger/v1/accounts/#{account}/chats/#{chat}/messages" } }
+    let(:first)    { ingest('a1', chat_id: 'chat-1') }
+    let(:second)   { ingest('b1', chat_id: 'chat-2', author_id: 555, text: 'Другой покупатель') }
+
+    before do
+      stub_avito_chat(avito_chat(id: 'chat-2', buyer_id: 555, buyer_name: 'Пётр'))
+      second.ticket.merge_to(ticket_id: first.ticket_id, user_id: 1)
+      %w[chat-1 chat-2].each do |chat|
+        stub_request(:post, send_url.call(chat)).to_return(
+          status: 200, headers: { 'Content-Type' => 'application/json' },
+          body: { id: "sent-#{chat}", created: Time.zone.now.to_i, direction: 'out', type: 'text', content: { text: 'x' } }.to_json,
+        )
+        stub_avito(:post, "/messenger/v1/accounts/#{account}/chats/#{chat}/read", body: { ok: true })
+      end
+    end
+
+    # Review, 2026-10-21: the answer to the merged chat's buyer went to the other buyer's chat.
+    it 'answers a message in the chat it came from' do
+      article = agent_reply(first.ticket.reload, in_reply_to: second.reload.message_id)
+
+      AvitoChannel::Delivery.new(article).deliver!
+
+      expect(a_request(:post, send_url.call('chat-2'))).to have_been_made.once
+      expect(a_request(:post, send_url.call('chat-1'))).not_to have_been_made
+      expect(article.reload.preferences['avito']).to include('chat_id' => 'chat-2', 'channel_id' => channel.id)
+    end
+
+    it 'sends nothing when the reply does not say which chat it is for' do
+      article = agent_reply(first.ticket.reload)
+
+      expect { AvitoChannel::Delivery.new(article).deliver! }
+        .to raise_error(AvitoChannel::Delivery::Undeliverable, include('several Avito chats'))
+      expect(a_request(:post, %r{/messages\z})).not_to have_been_made
+    end
+
+    it 'finishes a retry in the chat its first attempt went to' do
+      article = agent_reply(first.ticket.reload, preferences: { 'avito' => { 'channel_id' => channel.id, 'chat_id' => 'chat-2' } })
+
+      AvitoChannel::Delivery.new(article).deliver!
+
+      expect(a_request(:post, send_url.call('chat-2'))).to have_been_made.once
+    end
   end
 
   it 'does not mistake a message written before a failed send attempt for successful delivery' do

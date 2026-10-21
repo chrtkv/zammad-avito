@@ -382,7 +382,8 @@ module AvitoChannel
     end
 
     def echo_candidate(article, chat_id, piece)
-      { article_id: article.id, chat_id: chat_id, kind: piece['kind'], text: piece['text'], sent_at: Time.zone.at(piece['attempted_at']) }
+      { article_id: article.id, chat_id: chat_id, kind: piece['kind'], text: piece['text'], image_urls: piece['image_urls'],
+        sent_at: Time.zone.at(piece['attempted_at']) }
     end
 
     def record_echo(article, message)

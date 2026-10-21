@@ -93,6 +93,12 @@ module AvitoMessenger
       sizes.max_by { |dimensions, _url| dimensions.to_s.split('x').map(&:to_i).inject(1, :*) }.last
     end
 
+    # Every size's address; an image Zammad uploaded is recognised by them (Echo).
+    def image_urls
+      sizes = content.dig('image', 'sizes')
+      sizes.is_a?(Hash) ? sizes.values.map(&:to_s).reject(&:empty?) : []
+    end
+
     def voice_id
       content.dig('voice', 'voice_id')
     end

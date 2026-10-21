@@ -1,9 +1,14 @@
 module AvitoMessenger
   # Recognises Avito reporting back a message Zammad itself sent, when the message id never made it onto the
   # article (the send went out and its answer was lost, or the save after it failed). Such an own message is
-  # the same piece (same text, or an image for an image) in the same chat, written at or after the attempt.
+  # the same piece in the same chat, written at or after the attempt: the same text, or an image carrying an
+  # address of the image Zammad uploaded for it. Any own image is not enough: a manager sending a picture in
+  # Avito meanwhile would pass for the reply (review, 2026-10-21). That Avito reports an uploaded image under
+  # the addresses uploadImages gave is not yet confirmed on the live API; until it is, an image whose answer
+  # was lost may find no match, and Delivery then asks the agent to look rather than guess.
   #
-  #   Echo.match(message, sent) # sent: [{ article_id:, chat_id:, kind: 'text' | 'image', text:, sent_at: }]
+  #   Echo.match(message, sent)
+  #   # sent: [{ article_id:, chat_id:, kind: 'text' | 'image', text:, image_urls: [...], sent_at: }]
   #
   # Pass only pieces whose Avito id is still unknown: a piece with a known id is matched by id, and a
   # greeting a manager repeats in Avito must not be taken for the echo of an earlier one.
@@ -29,7 +34,9 @@ module AvitoMessenger
     end
 
     def same_piece?(piece, message)
-      return message.type == 'image' if piece[:kind].to_s == 'image'
+      if piece[:kind].to_s == 'image'
+        return message.type == 'image' && Array(piece[:image_urls]).intersect?(message.image_urls)
+      end
       return false if message.type != 'text'
 
       text = normalize(message.text)

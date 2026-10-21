@@ -97,6 +97,10 @@ module AvitoChannel
         # Texts written into tickets
         'Unable to send Avito message: %s'                                       => 'Не удалось отправить сообщение в Авито: %s',
         'Sent %s of %s messages; %s'                                             => 'Отправлено %s из %s сообщений; %s',
+        'This ticket holds several Avito chats (tickets were merged). Use "reply" on a message of the chat this answer is for.' =>
+                                                                                    'В этом тикете несколько чатов Авито (тикеты объединены). Нажмите «ответить» на сообщении того чата, которому адресован ответ.',
+        'Avito did not confirm whether the image %s reached the chat. Look at the chat in Avito and send the image again if it is missing.' =>
+                                                                                    'Авито не подтвердил, дошло ли изображение %s до чата. Посмотрите чат в Авито и отправьте изображение заново, если его там нет.',
         'Image'                                                                  => 'Изображение',
         'Voice message'                                                          => 'Голосовое сообщение',
         'Missed call'                                                            => 'Пропущенный звонок',

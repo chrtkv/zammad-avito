@@ -200,11 +200,11 @@ RSpec.describe AvitoMessenger::Client do
   describe '#upload_image' do
     let(:responses) { [[200, { '12345.abcdef' => { '1280x960' => 'https://img.example/1.png' } }]] }
 
-    it 'uploads as multipart under uploadfile[] and returns the image id' do
-      image_id = client.upload_image(user_id, filename: 'photo.png', content: "\x89PNG\x00".b, content_type: 'image/png')
+    it 'uploads as multipart under uploadfile[] and returns the image id with its addresses' do
+      image = client.upload_image(user_id, filename: 'photo.png', content: "\x89PNG\x00".b, content_type: 'image/png')
 
       request = transport.requests.first
-      expect(image_id).to eq('12345.abcdef')
+      expect(image).to have_attributes(id: '12345.abcdef', urls: ['https://img.example/1.png'])
       expect(request.headers['Content-Type']).to start_with('multipart/form-data; boundary=')
       expect(request.body).to include('name="uploadfile[]"; filename="photo.png"'.b)
       expect(request.body).to include("\x89PNG\x00".b)

@@ -167,6 +167,29 @@ RSpec.describe AvitoChannel::Importer, :aggregate_failures do
       expect(article).not_to eq(reply)
       expect(articles_of(first.ticket).size).to eq(3)
     end
+
+    context 'when the reply was an image' do
+      before do
+        stub_request(:get, %r{\Ahttps://img\.example/}).to_return(status: 200, body: 'JPEG', headers: { 'Content-Type' => 'image/jpeg' })
+        reply.preferences['avito']['pieces'] = [{ 'kind' => 'image', 'filename' => 'photo.png', 'image_id' => 'u1',
+                                                  'image_urls' => ['https://img.example/u1.jpg'], 'attempted_at' => 1.minute.ago.to_i }]
+        reply.save!
+      end
+
+      it 'links an own image carrying the upload\'s address' do
+        echoed = import(avito_message(id: 'i1', author_id: account, type: 'image',
+                                      content: { 'image' => { 'sizes' => { '640x480' => 'https://img.example/u1.jpg' } } }))
+        expect(echoed).to eq(reply)
+      end
+
+      # Review, 2026-10-21: any own image used to pass for the reply's.
+      it 'imports a manager\'s picture as a message of its own' do
+        article = import(avito_message(id: 'i2', author_id: account, type: 'image',
+                                       content: { 'image' => { 'sizes' => { '640x480' => 'https://img.example/manager.jpg' } } }))
+        expect(article).not_to eq(reply)
+        expect(reply.reload.preferences.dig('avito', 'pieces', 0, 'message_id')).to be_nil
+      end
+    end
   end
 
   describe 'other message types' do
